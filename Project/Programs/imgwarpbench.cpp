@@ -372,7 +372,7 @@ int  setupOpenCL(const char*       kernelPath,
 	 * Create command queue
 	 */
 	
-	*cmdQ = clCreateCommandQueue(*clCtx, *clDID, 0, NULL);
+	*cmdQ = clCreateCommandQueue(*clCtx, *clDID, CL_QUEUE_PROFILING_ENABLE, NULL);
 	if(*cmdQ){
 		printf("Created command queue.\n");
 	}else{
@@ -510,8 +510,24 @@ int main(int argc, char* argv[]){
 		clock_gettime(CLOCK_MONOTONIC_RAW, &te);
 		double tsN = 1e9*ts.tv_sec + ts.tv_nsec;
 		double teN = 1e9*te.tv_sec + te.tv_nsec;
-		
 		printf("Ran kernel. (%f)\n", (teN-tsN)/1e9);
+		
+		ulong tQueued, tSubmitted, tStarted, tEnded;
+		clGetEventProfilingInfo(warpDoneEvt, CL_PROFILING_COMMAND_QUEUED,
+		                        sizeof(tQueued), &tQueued, NULL);
+		clGetEventProfilingInfo(warpDoneEvt, CL_PROFILING_COMMAND_SUBMIT,
+		                        sizeof(tSubmitted), &tSubmitted, NULL);
+		clGetEventProfilingInfo(warpDoneEvt, CL_PROFILING_COMMAND_START,
+		                        sizeof(tStarted), &tStarted, NULL);
+		clGetEventProfilingInfo(warpDoneEvt, CL_PROFILING_COMMAND_END,
+		                        sizeof(tEnded), &tEnded, NULL);
+		
+		tSubmitted -= tQueued;
+		tStarted   -= tQueued;
+		tEnded     -= tQueued;
+		
+		printf("%24.9f     %24.9f     %24.9f     %24.9f\n",
+		       tQueued/1e9, tSubmitted/1e9, tStarted/1e9, tEnded/1e9);
 		
 		clReleaseEvent(warpDoneEvt);
 		
