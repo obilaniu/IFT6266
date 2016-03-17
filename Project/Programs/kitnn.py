@@ -10,7 +10,26 @@ attempts to solve the problem of correctly classifying Cats & Dogs for the
 Kaggle challenge. This work is done as part of the course project for the
 IFT6266 class given in Winter 2016.
 
-<Describe CNN layer structure here>
+            Output Size      *   Filter Size   * s_1x1 * e_1x1 * e_3x3 *
+            ************************************************************
+inputimage: (192, 192,    3) *                 *       *       *       *
+conv1:      ( 96,  96,   48) *   7x7/2 (x48)   *       *       *       *
+maxpool1:   ( 48,  48,   48) *   3x3/2         *       *       *       *
+fire2       ( 48,  48,   64) *                 *   16  *   32  *   32  *
+fire3       ( 48,  48,   64) *                 *   16  *   32  *   32  *
+fire4       ( 48,  48,  128) *                 *   32  *   64  *   64  *
+maxpool4:   ( 24,  24,  128) *   3x3/2         *       *       *       *
+fire5       ( 24,  24,  128) *                 *   32  *   64  *   64  *
+fire6       ( 24,  24,  192) *                 *   48  *   96  *   96  *
+fire7       ( 24,  24,  192) *                 *   48  *   96  *   96  *
+fire8       ( 24,  24,  256) *                 *   64  *  128  *  128  *
+maxpool8:   ( 12,  12,  256) *   3x3/2         *       *       *       *
+fire9       ( 12,  12,  256) *                 *   64  *  128  *  128  *
+conv10:     ( 12,  12,    2) *   1x1/1 (x2)    *       *       *       *
+avgpool10:  (  1,   1,    2) *   12x12/1       *       *       *       *
+softmax:    (  1,   1,    2) *                 *       *       *       *
+TOTALS:         NEURONS:                      PARAMETERS:
+                                                         
 """
 
 #
@@ -19,34 +38,216 @@ IFT6266 class given in Winter 2016.
 
 import ast
 import cPickle as pkl
+import cStringIO
 import cv2
 import getopt
 import gzip
-import h5py
+import h5py                            as H
 import inspect
+import io
 import math
 import numpy as np
 import os
 import pdb
 import sys
+import tarfile
 import theano                          as T
 import theano.tensor                   as TT
 import theano.tensor.nnet              as TTN
 import theano.tensor.nnet.conv         as TTNC
-import theano.tensor.signal.downsample as TTSD
+import theano.tensor.signal.pool       as TTSP
 from   theano import config            as TC
 import theano.printing                 as TP
 import time
 
 
-
-
 ###############################################################################
-# KITNN code.
+# KITNN HDF5 file format
+#
+# /
+#   sessions/
+#     1/
+#       meta/
+#         src.tar.gz                      uint8[]
+#         argv                            str[]
+#         unixTimeStarted                 uint64
+#         lastConsistentSnapshot          uint64
+#       snap/
+#         0/
+#           data/
+#             <paramHierarchy>            T
+#           continuation/
+#             cc                          str serialization of pickled cc.
+#         1/
+#             ...                         Same as in 0/
+#     2/
+#     3/
+#     4/
+#     ...
 #
 
+
+
 # Global constants (hopefully).
-H5PY_VLEN_STR = h5py.special_dtype(vlen=str)
+H5PY_VLEN_STR = H.special_dtype(vlen=str)
+
+
+#
+# Open a session file.
+#
+
+def kitnnOpenFile(filePath, argv):
+	f = H.File(filePath, "a")           # Create file
+	f.require_group("/sessions")        # Ensure a sessions group exists
+	
+	kitnnDeleteInconsistent(f)
+	s = kitnnCreateNextConsistent(f, argv)
+	
+	
+
+
+#
+# Delete sessions with no consistent snapshots.
+#
+
+def kitnnDeleteInconsistent(f):
+	for d in f["/sessions"].keys():
+		print "Key:", d
+		if f.get("/sessions/"+d+"/meta/lastConsistentSnapshot", -1) == -1:
+			del f["/sessions/"+d]
+
+#
+# Create the next consistent session.
+#
+
+def kitnnCreateNextConsistent(f, argv):
+	sessions = sorted(f["/sessions"].keys(), key=int)
+	
+	#
+	# If there are no existing sessions, create one numbered "1" and randomly
+	# initialize it.
+	#
+	# Otherwise copy over the highest-numbered session to a new session with
+	# an incremented session number.
+	#
+	
+	if len(sessions) == 0:
+		n = 1
+		sess = kitnnInitSessionRandom(f.require_group("/sessions/"+str(n)),
+		                              argv)
+	else:
+		o = sessions[-1]
+		n = str(int(o)+1)
+		sess = kitnnInitSessionFrom(f.require_group("/sessions/"+str(n)),
+		                            f.require_group("/sessions/"+str(o)),
+		                            argv)
+	
+	return sess
+
+#
+# Randomly initialize a session named sess.
+#
+
+def kitnnInitSessionRandom(sess, argv):
+	sess.create_dataset("snap/0/val", data=np.ones((100,100), dtype="float32"))
+	sess.create_dataset("snap/1/val", data=np.ones((100,100), dtype="float32"))
+	sess.create_dataset("meta/src.tar.gz", data=kitnnTarGzSource())
+	sess.create_dataset("meta/argv", data=argv, dtype=H5PY_VLEN_STR)
+	sess.create_dataset("meta/unixTimeStarted",
+	                    data=np.full((), time.time(), dtype="float64"))
+	sess.create_dataset("meta/lastConsistentSnapshot",
+	                    data=np.full((), -1, dtype="uint64"))
+	
+	
+	return kitnnMarkSessionConsistent(sess)
+
+#
+# Copy-initialize a session named sess from an old, consistent session named
+# oldSess.
+#
+
+def kitnnInitSessionFrom(sess, oldSess, argv):
+	#
+	# We copy all but meta/lastConsistentSnapshot
+	#
+	
+	def visitor(name):
+		if name != "meta/lastConsistentSnapshot" and \
+		   name != "meta/unixTimeStarted"        and \
+		   name != "meta/argv"                   and \
+		   name != "meta/src.tar.gz":
+			if type(oldSess[name]) == H.Group:
+				sess.create_group(name)
+			else:
+				sess.create_dataset(name, data=oldSess[name][...])
+	
+	oldSess.visit(visitor)
+	
+	#
+	# We copy meta/lastConsistentSnapshot last, ensuring that the snapshot is
+	# only valid once the copy is complete. We also timestamp this.
+	#
+	
+	sess.create_dataset("meta/src.tar.gz", data=kitnnTarGzSource())
+	sess.create_dataset("meta/argv", data=argv, dtype=H5PY_VLEN_STR)
+	sess.create_dataset("meta/unixTimeStarted",
+	                    data=np.full((), time.time(), dtype="float64"))
+	sess.create_dataset("meta/lastConsistentSnapshot",
+	                    data=np.full((), -1, dtype="uint64"))
+	snapNum = oldSess["meta/lastConsistentSnapshot"][...]
+	return kitnnMarkSessionConsistent(sess, snapNum)
+
+#
+# Mark snapshot numbered snapNum of session sess as consistent.
+#
+
+def kitnnMarkSessionConsistent(sess, snapNum=0):
+	snapNum = int(snapNum)
+	
+	# Release barrier. All previous writes must precede this atomic operation.
+	sess.file.flush()
+	
+	#
+	# At this point snapshot s is consistent, except for the flag that declares
+	# it so. We now set this flag.
+	#
+	
+	sess["meta/lastConsistentSnapshot"][()] = snapNum
+	sess.file.flush()
+	
+	#
+	# EITHER:
+	#   - This write makes it back to the filesystem, and the snapshot is
+	#      consistent.
+	# OR
+	#   - This write doesn't make it back to the filesystem (because of, i.e.,
+	#     SIGINT), in which case the snapshot will be believed inconsistent and
+	#     only the previous snapshot (if any) will be believed consistent.
+	#
+	
+	return sess
+
+#
+# Gzip own source code.
+#
+
+def kitnnTarGzSource():
+	# Get coordinates of files to crush
+	kitnnSrcBase = os.path.dirname(os.path.abspath(__file__))
+	sourceFiles = ["kitnn.py", "inpainter.cpp"]
+	
+	# Make a magic, in-memory tarfile and write into it all sources.
+	f  = cStringIO.StringIO()
+	tf = tarfile.open(fileobj=f, mode="w:gz")
+	for sources in sourceFiles:
+		tf.add(os.path.join(kitnnSrcBase,sources))
+	tf.close()
+	
+	# Get the compressed in-memory tarfile as a byte array.-
+	tarGzSource = np.array(bytearray(f.getvalue()), dtype="uint8")
+	f.close()
+	
+	return tarGzSource
 
 #
 # Get the source code of this module (the contents of this very file) and the
@@ -69,6 +270,7 @@ def saveArgsAndSrcs(group, args, src):
 	
 	# Store source code.
 	group.create_dataset("src",  dtype=H5PY_VLEN_STR, data=src)
+
 
 
 
@@ -124,7 +326,7 @@ def initScalar(s):
 
 def getSVs(source=None):
 	if(source != None):
-		f = h5py.File(source, "a")
+		f = H.File(source, "a")
 		
 		for (name, param) in f["/param/"].items():
 			exec("value_"+name+" = param[...]")
@@ -184,7 +386,7 @@ def getSVs(source=None):
 #
 
 def dumpSVs(source, SV):
-	f = h5py.File(source, "a")
+	f = H.File(source, "a")
 	
 	for (name, param) in SV.iteritems():
 		value = param.get_value()
@@ -211,62 +413,115 @@ def constructTheanoFuncs(SV):
 	#
 	
 	# Input is ix.
-	ix = TT.tensor4("x") # (Batch=hB, #Channels=3, Height=32, Width=32)
+	ix = TT.tensor4("x") # (Batch=hB, #Channels=3, Height=192, Width=192)
 	
 	
 	##########################################################
 	# The math.                                              #
 	##########################################################
 	
-	
 	######################  Input layer
-	vLin         = ix
+	vIn           = ix
 	
-	######################  Layer a
-	vLaAct       = TTNC.conv2d(input=vLin, filters=SV["pLaW"]) + SV["pLaB"]
-	vLa          = TTN.relu(vLaAct)
+	######################  conv1
+	vConv1Act     = TTNC.conv2d (vIn, pConv1W, None, None, "half", (2,2)) + pConv1B
+	vConv1        = TTN .relu   (vConv1Act)
 	
-	######################  Layer b
-	vLb          = TTSP.pool_2d(vLa, ds=(2,2), ignore_border=True, st=(2,2), mode="max")
+	######################  maxpool1
+	vMaxpool1     = TTSP.pool_2d(vLconv1, ds=(3,3), False, st=(2,2), "max")
 	
-	######################  Layer c
-	vLcAct       = TTNC.conv2d(input=vLb, filters=SV["pLcW"]) + SV["pLcB"]
-	vLc          = TTN.relu(vLcAct)
+	######################  fire2
+	vFire2CompAct = TTNC.conv2d (vMaxpool1,  pFire2CompW, None, None, "half", (1,1)) + pFire2CompB
+	vFire2Comp    = TTN .relu   (vFire2CompAct)
+	vFire2Exp1Act = TTNC.conv2d (vFire2Comp, pFire2Exp1W, None, None, "half", (1,1)) + pFire2Exp1B
+	vFire2Exp1    = TTN .relu   (vFire2Exp1Act)
+	vFire2Exp3Act = TTNC.conv2d (vFire2Comp, pFire2Exp3W, None, None, "half", (1,1)) + pFire2Exp3B
+	vFire2Exp3    = TTN .relu   (vFire2Exp3Act)
+	vFire2        = TT  .stack  ([vFire2Exp1, vFire2Exp3], axis=1);
 	
-	######################  Layer d
-	vLd          = TTSP.pool_2d(vLc, ds=(2,2), ignore_border=True, st=(2,2), mode="max")
+	######################  fire3
+	vFire3CompAct = TTNC.conv2d (vFire2,     pFire3CompW, None, None, "half", (1,1)) + pFire3CompB
+	vFire3Comp    = TTN .relu   (vFire3CompAct)
+	vFire3Exp1Act = TTNC.conv2d (vFire3Comp, pFire3Exp1W, None, None, "half", (1,1)) + pFire3Exp1B
+	vFire3Exp1    = TTN .relu   (vFire3Exp1Act)
+	vFire3Exp3Act = TTNC.conv2d (vFire3Comp, pFire3Exp3W, None, None, "half", (1,1)) + pFire3Exp3B
+	vFire3Exp3    = TTN .relu   (vFire3Exp3Act)
+	vFire3        = TT  .stack  ([vFire3Exp1, vFire3Exp3], axis=1);
 	
-	######################  Layer e
-	vLeAct       = TTNC.conv2d(input=vLd, filters=SV["pLeW"]) + SV["pLeB"]
-	vLe          = TTN.relu(vLeAct)
+	######################  fire4
+	vFire4CompAct = TTNC.conv2d (vFire3,     pFire4CompW, None, None, "half", (1,1)) + pFire4CompB
+	vFire4Comp    = TTN .relu   (vFire4CompAct)
+	vFire4Exp1Act = TTNC.conv2d (vFire4Comp, pFire4Exp1W, None, None, "half", (1,1)) + pFire4Exp1B
+	vFire4Exp1    = TTN .relu   (vFire4Exp1Act)
+	vFire4Exp3Act = TTNC.conv2d (vFire4Comp, pFire4Exp3W, None, None, "half", (1,1)) + pFire4Exp3B
+	vFire4Exp3    = TTN .relu   (vFire4Exp3Act)
+	vFire4        = TT  .stack  ([vFire4Exp1, vFire4Exp3], axis=1);
 	
-	######################  Layer f
-	vLfAct       = TTNC.conv2d(input=vLe, filters=SV["pLfW"]) + SV["pLfB"]
-	vLf          = TTN.relu(vLfAct)
+	######################  maxpool4
+	vMaxpool4     = TTSP.pool_2d(vFire4, ds=(3,3), False, st=(2,2), "max")
 	
-	######################  Layer g
-	vLg          = TTSP.pool_2d(vLf, ds=(2,2), ignore_border=True, st=(2,2), mode="max")
+	######################  fire5
+	vFire5CompAct = TTNC.conv2d (vMaxpool4,  pFire5CompW, None, None, "half", (1,1)) + pFire5CompB
+	vFire5Comp    = TTN .relu   (vFire5CompAct)
+	vFire5Exp1Act = TTNC.conv2d (vFire5Comp, pFire5Exp1W, None, None, "half", (1,1)) + pFire5Exp1B
+	vFire5Exp1    = TTN .relu   (vFire5Exp1Act)
+	vFire5Exp3Act = TTNC.conv2d (vFire5Comp, pFire5Exp3W, None, None, "half", (1,1)) + pFire5Exp3B
+	vFire5Exp3    = TTN .relu   (vFire5Exp3Act)
+	vFire5        = TT  .stack  ([vFire5Exp1, vFire5Exp3], axis=1);
 	
-	######################  Layer h
-	vLhAct       = TTNC.conv2d(input=vLg, filters=SV["pLhW"]) + SV["pLhB"]
-	vLh          = TTN.relu(vLhAct)
+	######################  fire6
+	vFire6CompAct = TTNC.conv2d (vFire5,     pFire6CompW, None, None, "half", (1,1)) + pFire6CompB
+	vFire6Comp    = TTN .relu   (vFire6CompAct)
+	vFire6Exp1Act = TTNC.conv2d (vFire6Comp, pFire6Exp1W, None, None, "half", (1,1)) + pFire6Exp1B
+	vFire6Exp1    = TTN .relu   (vFire6Exp1Act)
+	vFire6Exp3Act = TTNC.conv2d (vFire6Comp, pFire6Exp3W, None, None, "half", (1,1)) + pFire6Exp3B
+	vFire6Exp3    = TTN .relu   (vFire6Exp3Act)
+	vFire6        = TT  .stack  ([vFire6Exp1, vFire6Exp3], axis=1);
 	
-	######################  Layer i
-	#vLiAct       = TTNC.conv2d(input=vLh, filters=SV["pLiW"]) + SV["pLiB"]
-	#vLi          = TTN.relu(vLiAct)
-	vLiAct       = TTNC.conv2d(input=vLh, filters=SV["pLiW"])
-	vLiBn        = TTNB.batch_normalization(vLiAct, SV["pLiG"], SV["pLiB"], TT.mean(vLiAct, axis=0, keepdims=1), TT.std(vLiAct, axis=0, keepdims=1))
-	vLi          = TTN.relu(vLiBn)
+	######################  fire7
+	vFire7CompAct = TTNC.conv2d (vFire6,     pFire7CompW, None, None, "half", (1,1)) + pFire7CompB
+	vFire7Comp    = TTN .relu   (vFire7CompAct)
+	vFire7Exp1Act = TTNC.conv2d (vFire7Comp, pFire7Exp1W, None, None, "half", (1,1)) + pFire7Exp1B
+	vFire7Exp1    = TTN .relu   (vFire7Exp1Act)
+	vFire7Exp3Act = TTNC.conv2d (vFire7Comp, pFire7Exp3W, None, None, "half", (1,1)) + pFire7Exp3B
+	vFire7Exp3    = TTN .relu   (vFire7Exp3Act)
+	vFire7        = TT  .stack  ([vFire7Exp1, vFire7Exp3], axis=1);
 	
-	######################  Layer j
-	vLj          = TTNC.conv2d(input=vLi, filters=SV["pLjW"]) + SV["pLjB"]
+	######################  fire8
+	vFire8CompAct = TTNC.conv2d (vFire7,     pFire8CompW, None, None, "half", (1,1)) + pFire8CompB
+	vFire8Comp    = TTN .relu   (vFire8CompAct)
+	vFire8Exp1Act = TTNC.conv2d (vFire8Comp, pFire8Exp1W, None, None, "half", (1,1)) + pFire8Exp1B
+	vFire8Exp1    = TTN .relu   (vFire8Exp1Act)
+	vFire8Exp3Act = TTNC.conv2d (vFire8Comp, pFire8Exp3W, None, None, "half", (1,1)) + pFire8Exp3B
+	vFire8Exp3    = TTN .relu   (vFire8Exp3Act)
+	vFire8        = TT  .stack  ([vFire8Exp1, vFire8Exp3], axis=1);
+	
+	######################  maxpool8
+	vMaxpool8     = TTSP.pool_2d(vFire8, ds=(3,3), False, st=(2,2), "max")
+	
+	######################  fire9
+	vFire9CompAct = TTNC.conv2d (vMaxpool8,  pFire9CompW, None, None, "half", (1,1)) + pFire9CompB
+	vFire9Comp    = TTN .relu   (vFire9CompAct)
+	vFire9Exp1Act = TTNC.conv2d (vFire9Comp, pFire9Exp1W, None, None, "half", (1,1)) + pFire9Exp1B
+	vFire9Exp1    = TTN .relu   (vFire9Exp1Act)
+	vFire9Exp3Act = TTNC.conv2d (vFire9Comp, pFire9Exp3W, None, None, "half", (1,1)) + pFire9Exp3B
+	vFire9Exp3    = TTN .relu   (vFire9Exp3Act)
+	vFire9        = TT  .stack  ([vFire9Exp1, vFire9Exp3], axis=1);
+	
+	######################  conv10
+	vConv10Act    = TTNC.conv2d (vFire9, pConv10W, None, None, "half", (1,1)) + pConv10B
+	vConv10       = TTN .relu   (vConv10Act)
+	
+	######################  avgpool10
+	vAvgpool10    = TTSP.pool_2d(vConv10, ds=(12,12), True, st=(1,1), "average_exc_pad")
 	
 	######################  Softmax
-	vLkunnorm    = TT.exp(vLj - vLj.max(axis=1, keepdims=1))
-	vLk          = vLkunnorm / vLkunnorm.sum(axis=1, keepdims=1)
+	vSMi          = vAvgpool10
+	vSMu          = TT.exp(vSMi - TT.max(vSMi, axis=1, keepdims=1))
+	vSM           =        vSMu / TT.sum(vSMu, axis=1, keepdims=1)
 	
 	######################  Output layer
-	oy           = vLk
+	oy           = vSM
 	
 	# Function creation
 	classf       = T.function(inputs=[ix], outputs=oy, name="classification-function")
@@ -332,89 +587,254 @@ def constructTheanoFuncs(SV):
 
 
 
+
+###############################################################################
+# KITNN Trainer class code.
+#
+
+class KITNNTrainer(object):
+	#
+	# Construct a trainer object from arguments.
+	#
+	
+	def __init__(self, argv):
+		self.kEpoch = 0
+		
+		#
+		# IMPORTANT:
+		# 
+		# The below is a critical part of the continuation-passing style used
+		# in train(). It's what allows finegrained resumable training.
+		#
+		
+		if False:
+			self.SETCC(None) #FIXME: Whatever we loaded from the save file!
+		else:
+			self.SETCC(self.ccStartEpoch);
+	
+	#
+	# IMPLEMENTATION OF CONTINUATION PASSING STYLE.
+	#
+	# Three functions implement our mini-CPS training environment.
+	#
+	# - Have continuation?
+	#
+	#     We have a continuation if self.cc is a tuple of length 4. If so:
+	#       - Its first element is a callable continuation function.
+	#       - Its second element is a tuple of arguments to be passed to the
+	#         continuation
+	#       - Its third element is a return value.
+	#       - Its fourth element is a continue Boolean flag that indicates
+	#         whether we're continuing, or returning from the trampoline.
+	#
+	# - Invoke continuation.
+	# - Set/Return continuation.
+	#
+	#     - If the "continue" flag is True, we are "returning" only the
+	#       continuation which the trampoline is expected to call.
+	#     - If the "continue" flag is False, we are truly returning a value an
+	#       breaking out of the trampoline.
+	#
+	# - Set continuation arguments.
+	#
+	#    Intended to be used by resuming code. Sets the current
+	#    continuation's arguments and sets the continue flag to True.
+	#    After a suspension of training, this allows a subsequent RUNCC() to
+	#    resume training.
+	#
+	# - Run continuation trampoline.
+	#
+	#     Runs the trampoline loop that implements our CPS style.
+	#
+	
+	def HAVECC(self):
+		return len     (self.cc   ) ==     4 and \
+		       callable(self.cc[0]) ==  True and \
+		       type    (self.cc[1]) == tuple and \
+		       type    (self.cc[3]) ==  bool and \
+			   self.cc[3]           ==  True
+	
+	def INVKCC(self):
+		if self.HAVECC():
+			self.cc[0](*self.cc[1])
+		return self.cc[2]
+	
+	def SETCC(self, fun, args=()):
+		assert callable(fun)
+		assert type(args)==tuple
+		self.cc = (fun, args, None, True)
+		return self.cc
+	
+	def RETCC(self, ret=None, fun=None, args=()):
+		if fun==None:
+			self.cc = (None, (), ret, False)
+		else:
+			assert callable(fun)
+			assert type(args)==tuple
+			
+			self.cc = (fun, args, ret, False)
+		return self.cc
+	
+	def SETCCARGS(self, args):
+		assert type(args)==tuple
+		self.cc[2] = args
+		self.cc[3] = True
+	
+	def RUNCC(self):
+		ret = None
+		try:
+			while self.HAVECC():
+				ret = self.INVKCC()
+		except KeyboardInterrupt as kbdie:
+			print("Stopped.")
+		finally:
+			return ret
+	
+	#
+	# Train a KITNN.
+	#
+	
+	def train(self):
+		self.RUNCC()
+	
+	#
+	# Start an epoch
+	#
+	
+	def ccStartEpoch(self):
+		self.ccDoTrainPass()
+		self.ccDoBNPass()
+		self.ccDoValidPass()
+		self.kEpoch += 1
+		
+		print self.kEpoch
+		
+		if self.kEpoch<10:
+			return self.SETCC(self.ccStartEpoch)
+		else:
+			return self.RETCC(None, self.ccStartEpoch)
+	
+	
+	#
+	# Do one pass over the training set.
+	#
+	
+	def ccDoTrainPass(self):
+		pass
+	
+	
+	#
+	# Learn Batch Normalization constants over training set.
+	#
+	
+	def ccDoBNPass(self):
+		pass
+	
+	
+	#
+	# Do one pass over the validation set.
+	#
+	
+	def ccDoValidPass(self):
+		pass
+	
+	
+	#
+	# Print status
+	#
+	
+	def setAndPrintState(newState=None, newLine=False, doPrint=True):
+		# Set current state to new state
+		if(newState != None):
+			self.state = newState
+		
+		# Print if told to
+		if(doPrint):
+			# Switch on current state.
+			if  (self.state == "a"):
+				sys.stdout.write()
+			elif(self.state == "b"):
+				sys.stdout.write()
+			elif(self.state == "c"):
+				sys.stdout.write()
+			elif(self.state == "d"):
+				sys.stdout.write()
+			elif(self.state == "e"):
+				sys.stdout.write()
+			elif(self.state == "f"):
+				sys.stdout.write()
+			
+			# Final newline, if wanted
+			if newLine:
+				sys.stdout.write("\n")
+			
+			# Flush
+			sys.stdout.flush()
+
+
+
+
+
+###############################################################################
+# KITNN Class code.
+#
+
+class KITNN(object):
+	#
+	# Construct a KITNN object.
+	#
+	
+	def __init__(self, sess):
+		pass
+	
+	#
+	# Load oneself from an HDF5 group.
+	#
+	# This operation must be idempotent.
+	#
+	
+	def load(self, sess):
+		pass
+	
+	#
+	# Save oneself to an HDF5 group.
+	#
+	# This operation must be idempotent.
+	#
+	
+	def save(self, sess):
+		pass
+	
+	#
+	# Classify image(s).
+	#
+	# Accepts a (B,3,H,W)-shaped tensor of B images, and returns a (B,C)-shaped
+	# tensor of C class probabilities for each of the B images.
+	#
+	
+	def classify(self, imgs):
+		pass
+	
+	#
+	# Train update.
+	# 
+	# Performs forwardprop, backprop and update by invoking the training
+	# function.
+	# 
+	# Returns the training function's return values.
+	#
+	
+	def update(self, **kwargs):
+		pass
+
+
+
+
+
+
 ###############################################################################
 # Implementations of the script's "verbs".
 #
-
-#
-# Annotate dataset with bounding boxes.
-#
-
-def verb_annotatebbds(argv):
-	# Check arguments
-	if(len(argv) != 4):
-		return verb_help()
-	
-	# The first argument is the annotations file, the second is the dataset
-	# directory.
-	annfile = argv[2]
-	dataset = argv[3]
-	
-	#Sanity check their existence or accessibility
-	if(os.path.exists(annfile)):
-		if(not os.path.isfile(annfile)):
-			print("{:s} is not a file!".format(annfile))
-			return
-		
-		if(not os.access(annfile, os.W_OK)):
-			print("{:s} is not writable!".format(annfile))
-			return
-	else:
-		catlist = [[] for x in xrange(12500)]
-		doglist = [[] for x in xrange(12500)]
-		f = open(annfile, "w+")
-		pkl.dump((catlist, doglist), f, -1)
-		f.close()
-	
-	f = open(annfile, "r+")
-	pkl.dump((catlist, doglist), f, -1)
-	f.close()
-	
-	if(not os.path.isdir (dataset)):
-		print("{:s} is not a directory!".format(dataset))
-		return
-	
-	# Variables we'll manipulate every iteration
-	classes = ["cat", "dog"]
-	c      = 0                    # Species
-	i      = 1                    # Image #
-	j      = -1                   # Bounding Box #
-	num    = ""                   # Entered number.
-	
-	#
-	# Loop until we decide to quit.
-	#
-	
-	while True:
-		#
-		# A loop iteration has three steps.
-		#
-		# 1) Draw the situation at (c,i). The current bounding box, if any, is
-		#    drawn with linesize 2; The rest (if any) with linesize 1.
-		# 2) Display the situation and wait for key input.
-		# 3) Handle the keyboard input.
-		#
-		
-		if(c <     0): c =     0
-		if(c >     1): c =     1
-		if(i <     1): c =     1
-		if(i > 12500): c = 12500
-		
-		imgpathname = os.path.join(dataset, "{:s}.{:d}.jpg".format(classes[c], i))
-		img         = cv2.imread(imgpathname)
-		cv2.imshow("Image", img)
-		key         = cv2.waitKey()
-		
-		print(chr(key))
-		
-		break
-
-#
-# Classify the argument images as cat or dog.
-#
-
-def verb_classify(argv):
-	print argv
 
 #
 # Print help/usage information
@@ -428,8 +848,6 @@ Usage of KITNN.
 The KITNN script is invoked using a verb that denotes the general action to be
 taken, plus optional arguments. The following verbs are defined:
 
-    \033[1mannotatebbds\033[0m:
-
     \033[1mclassify\033[0m:
 
     \033[1mhelp\033[0m:
@@ -440,200 +858,75 @@ taken, plus optional arguments. The following verbs are defined:
 """[1:-1] #This hack deletes the newlines before and after the triple quotes.
 	)
 
+
+#
+# Classify the argument images as cat or dog.
+#
+
+def verb_classify(argv):
+	print argv
+
+
+
+#
+# Extract code and arguments from the session file. Print the args to stderr
+# and the .tar.gz to stdout.
+#
+
+def verb_extractCode(argv):
+	print argv
+
+
+
 #
 # Train KITNN.
 #
 
-def verb_train(args=None):
-	# Theano code.
-	source          = getSource()
-	SV              = getSVs(source)
-	(classf, lossf) = constructTheanoFuncs(SV)
+def verb_train(argv=None):
+	kitnntrainer = KITNNTrainer(argv)
+	if(kitnntrainer == None):
+		exit(1)
 	
+	kitnntrainer.train()
 	
-	
-	# Load data
-	(ix, iy) = unpickleCIFAR("cifar-10-batches-py")
-	
-	# Dump image and its flip
-	img = ix[2]
-	img = img.reshape((3,32,32))
-	img = np.einsum("cyx->yxc", img)[:,:,::-1]   # Transpose, then reverse channel order, since OpenCV uses BGR
-	cv2.imwrite("ImageOriginal.png", img)
-	cv2.imwrite("ImageFlipped.png",  img[:,::-1,:])
-	
-	# Split dataset
-	T = 45000
-	V =  5000
-	train_ix = ix[:T]
-	train_iy = iy[:T]
-	valid_ix = ix[T:T+V]
-	valid_iy = iy[T:T+V]
-	test_ix  = ix[T+V:]
-	test_iy  = iy[T+V:]
-	
-	# Run Main Loop
-	iter             = 0
-	batch_size_train = 32
-	batch_size_valid = 1000
-	
-	#
-	# 20 Epochs
-	#
-	
-	for e in xrange(20):
-		# Timing start.
-		ts = time.time()
-		
-		#
-		# Train over whole batch
-		#
-		
-		B=0
-		while((B+1)*batch_size_train <= T):
-			# Compute selection
-			Bs = (B  )*batch_size_train
-			Be = (B+1)*batch_size_train
-			
-			# Extract and convert as needed
-			sel_ix = train_ix[Bs:Be]
-			sel_iy = train_iy[Bs:Be]
-			
-			# Flip horizontally as needed
-			for flipidx in xrange(batch_size_train):
-				if(np.random.randint(2) == 1):
-					sel_ix[flipidx] = sel_ix[flipidx,:,:,::-1]
-			
-			# Run trainer
-			loss = lossf(sel_ix, sel_iy)[()]
-			
-			# Print iteration and loss function
-			print("Epoch {:3d}      Iter {:7d}     Loss {:12.6f}".format(e, iter, loss))
-			
-			# Increment counters.
-			iter += 1
-			B    += 1
-		
-		#
-		# Evaluate train and validation error
-		#
-		
-		train_err = 0
-		
-		print("                                 **** VALIDATING...           ****");
-		B=0
-		valid_err  = 0
-		valid_loss = 0
-		while((B+1)*batch_size_valid <= len(valid_ix)):
-			# Compute selection
-			Bs = (B  )*batch_size_valid
-			Be = (B+1)*batch_size_valid
-			
-			# Extract and convert as needed
-			sel_ix = valid_ix[Bs:Be]
-			sel_iy = valid_iy[Bs:Be]
-			
-			# Run classifier
-			out_iy = classf(sel_ix)
-			
-			# Argmax
-			valid_loss += -np.sum(sel_iy * np.log(out_iy))
-			out_iy = np.argmax(out_iy[:,:,0,0], axis=1)
-			sel_iy = np.argmax(sel_iy[:,:,0,0], axis=1)
-			
-			#Accumulate errors
-			valid_err += np.sum(out_iy != sel_iy)
-			
-			#Increment Counter
-			B    += 1
-		
-		# Compute average
-		valid_err  = float(valid_err)  / len(valid_ix)
-		valid_loss = float(valid_loss) / len(valid_ix)
-		
-		# Print
-		print("                                 **** VALID ERR: {:12.6f}    LOSS: {:12.6f} ****".format(valid_err*100.0, valid_loss));
-		
-		
-		
-		print("                                 **** TESTING...              ****");
-		B=0
-		test_err  = 0
-		test_loss = 0
-		while((B+1)*batch_size_valid <= len(test_ix)):
-			# Compute selection
-			Bs = (B  )*batch_size_valid
-			Be = (B+1)*batch_size_valid
-			
-			# Extract and convert as needed
-			sel_ix = test_ix[Bs:Be]
-			sel_iy = test_iy[Bs:Be]
-			
-			# Run classifier
-			out_iy = classf(sel_ix)
-			
-			# Argmax
-			test_loss += -np.sum(sel_iy * np.log(out_iy))
-			out_iy = np.argmax(out_iy[:,:,0,0], axis=1)
-			sel_iy = np.argmax(sel_iy[:,:,0,0], axis=1)
-			
-			#Accumulate errors
-			test_err += np.sum(out_iy != sel_iy)
-			
-			#Increment Counter
-			B    += 1
-		
-		# Compute average
-		test_err  = float(test_err)  / len(test_ix)
-		test_loss = float(test_loss) / len(test_ix)
-		
-		# Print
-		print("                                 **** TEST  ERR: {:12.6f}    LOSS: {:12.6f} ****".format(test_err*100.0, test_loss));
-		
-		
-		
-		print("                                 **** TRAIN ERR...             ****");
-		B=0
-		train_err  = 0
-		train_loss = 0
-		while((B+1)*batch_size_valid <= len(train_ix)):
-			# Compute selection
-			Bs = (B  )*batch_size_valid
-			Be = (B+1)*batch_size_valid
-			
-			# Extract and convert as needed
-			sel_ix = train_ix[Bs:Be]
-			sel_iy = train_iy[Bs:Be]
-			
-			# Run classifier
-			out_iy = classf(sel_ix)
-			
-			# Argmax
-			train_loss += -np.sum(sel_iy * np.log(out_iy))
-			out_iy = np.argmax(out_iy[:,:,0,0], axis=1)
-			sel_iy = np.argmax(sel_iy[:,:,0,0], axis=1)
-			
-			#Accumulate errors
-			train_err += np.sum(out_iy != sel_iy)
-			
-			#Increment Counter
-			B    += 1
-		
-		# Compute average
-		train_err  = float(train_err)  / len(train_ix)
-		train_loss = float(train_loss) / len(train_ix)
-		
-		# Print
-		print("                                 **** TRAIN ERR: {:12.6f}    LOSS: {:12.6f} ****".format(train_err*100.0, train_loss));
-		
-		# Timing end
-		te = time.time()
-		print("                                 **** EPOCH {:3d} TIME: {:12.6f} seconds ****".format(e, te-ts));
-		
-		dumpSVs(DEFAULT_FILEPATH, SV)
-	
-	print("Done!")
-	pdb.set_trace()
+	#pdb.set_trace()
+
+
+
+
+#
+# Screw around.
+#
+
+def verb_screw(argv=None):
+	kitnnOpenFile(argv[2], argv)
+
+
+
+
+#
+# Dump source code of session
+#
+
+def verb_dumpsrcs(argv):
+	f  = H.File(argv[2], "r")
+	gz = bytearray(f["/sessions/"+argv[3]+"/meta/src.tar.gz"])
+	sys.stdout.write(gz)
+	f.close()
+
+
+
+
+#
+# Dump arguments of session
+#
+
+def verb_dumpargs(argv):
+	f  = H.File(argv[2], "r")
+	print list(f["/sessions/"+argv[3]+"/meta/argv"][...])
+	f.close()
+
+
 
 ###############################################################################
 # Main
@@ -652,3 +945,114 @@ if __name__ == "__main__":
 		eval("verb_"+sys.argv[1]+"(sys.argv)")      # Then call it.
 	else:
 		verb_help(sys.argv)                         # Or offer help.
+
+
+
+# pool_2d(input, ds, ignore_border=None, st=None, padding=(0, 0), mode='max')
+#     Downscale the input by a specified factor
+#     
+#     Takes as input a N-D tensor, where N >= 2. It downscales the input image by
+#     the specified factor, by keeping only the maximum value of non-overlapping
+#     patches of size (ds[0],ds[1])
+#     
+#     Parameters
+#     ----------
+#     input : N-D theano tensor of input images
+#         Input images. Max pooling will be done over the 2 last dimensions.
+#     ds : tuple of length 2
+#         Factor by which to downscale (vertical ds, horizontal ds).
+#         (2,2) will halve the image in each dimension.
+#     ignore_border : bool (default None, will print a warning and set to False)
+#         When True, (5,5) input with ds=(2,2) will generate a (2,2) output.
+#         (3,3) otherwise.
+#     st : tuple of two ints
+#         Stride size, which is the number of shifts over rows/cols to get the
+#         next pool region. If st is None, it is considered equal to ds
+#         (no overlap on pooling regions).
+#     padding : tuple of two ints
+#         (pad_h, pad_w), pad zeros to extend beyond four borders of the
+#         images, pad_h is the size of the top and bottom margins, and
+#         pad_w is the size of the left and right margins.
+#     mode : {'max', 'sum', 'average_inc_pad', 'average_exc_pad'}
+#         Operation executed on each window. `max` and `sum` always exclude
+#         the padding in the computation. `average` gives you the choice to
+#         include or exclude it.
+
+
+
+# conv2d(input, filters, input_shape=None, filter_shape=None, border_mode='valid', subsample=(1, 1), filter_flip=True, image_shape=None, **kwargs)
+#     This function will build the symbolic graph for convolving a mini-batch of a
+#     stack of 2D inputs with a set of 2D filters. The implementation is modelled
+#     after Convolutional Neural Networks (CNN).
+#     
+#     
+#     Parameters
+#     ----------
+#     input: symbolic 4D tensor
+#         Mini-batch of feature map stacks, of shape
+#         (batch size, input channels, input rows, input columns).
+#         See the optional parameter ``input_shape``.
+#     
+#     filters: symbolic 4D tensor
+#         Set of filters used in CNN layer of shape
+#         (output channels, input channels, filter rows, filter columns).
+#         See the optional parameter ``filter_shape``.
+#     
+#     input_shape: None, tuple/list of len 4 of int or Constant variable
+#         The shape of the input parameter.
+#         Optional, possibly used to choose an optimal implementation.
+#         You can give ``None`` for any element of the list to specify that this
+#         element is not known at compile time.
+#     
+#     filter_shape: None, tuple/list of len 4 of int or Constant variable
+#         The shape of the filters parameter.
+#         Optional, possibly used to choose an optimal implementation.
+#         You can give ``None`` for any element of the list to specify that this
+#         element is not known at compile time.
+#     
+#     border_mode: str, int or tuple of two int
+#         Either of the following:
+#     
+#         ``'valid'``: apply filter wherever it completely overlaps with the
+#             input. Generates output of shape: input shape - filter shape + 1
+#         ``'full'``: apply filter wherever it partly overlaps with the input.
+#             Generates output of shape: input shape + filter shape - 1
+#         ``'half'``: pad input with a symmetric border of ``filter rows // 2``
+#             rows and ``filter columns // 2`` columns, then perform a valid
+#             convolution. For filters with an odd number of rows and columns, this
+#             leads to the output shape being equal to the input shape.
+#         ``int``: pad input with a symmetric border of zeros of the given
+#             width, then perform a valid convolution.
+#         ``(int1, int2)``: pad input with a symmetric border of ``int1`` rows
+#             and ``int2`` columns, then perform a valid convolution.
+#     
+#     subsample: tuple of len 2
+#         Factor by which to subsample the output.
+#         Also called strides elsewhere.
+#     
+#     filter_flip: bool
+#         If ``True``, will flip the filter rows and columns
+#         before sliding them over the input. This operation is normally referred
+#         to as a convolution, and this is the default. If ``False``, the filters
+#         are not flipped and the operation is referred to as a cross-correlation.
+#     
+#     image_shape: None, tuple/list of len 4 of int or Constant variable
+#         Deprecated alias for input_shape.
+#     
+#     kwargs: Any other keyword arguments are accepted for backwards
+#             compatibility, but will be ignored.
+#     
+#     Returns
+#     -------
+#     Symbolic 4D tensor
+#         Set of feature maps generated by convolutional layer. Tensor is
+#         of shape (batch size, output channels, output rows, output columns)
+#     
+#     Notes
+#     -----
+#         If CuDNN is available, it will be used on the
+#         GPU. Otherwise, it is the *CorrMM* convolution that will be used
+#         "caffe style convolution".
+#     
+#         This is only supported in Theano 0.8 or the development
+#         version until it is released.
