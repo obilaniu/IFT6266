@@ -29,7 +29,7 @@ conv10:     ( 12,  12,    2) *   1x1/1 (x2)    *       *       *       *
 avgpool10:  (  1,   1,    2) *   12x12/1       *       *       *       *
 softmax:    (  1,   1,    2) *                 *       *       *       *
 TOTALS:         NEURONS:                      PARAMETERS:
-                                                         
+                                                368386
 """
 
 #
@@ -64,174 +64,363 @@ import time
 ###############################################################################
 # KITNN HDF5 file format
 #
-# /
-#   sessions/
-#     1/
-#       meta/
-#         src.tar.gz                      uint8[]
-#         argv                            str[]
-#         unixTimeStarted                 uint64
-#         lastConsistentSnapshot          uint64
-#       snap/
-#         0/
-#           data/
-#             <paramHierarchy>            T
-#           continuation/
-#             cc                          str serialization of pickled cc.
-#         1/
-#             ...                         Same as in 0/
+# PATH ---------------------------------| TYPE --------------| DESCRIPTION ----
+#
+# /                                                            Root.
+#   sessions/                                                  Sessions folder.
+#     1/                                                       Session 1 folder.
+#       meta/                                                  Metadata folder.
+#         initPRNG/                                            Initialization-time MERSENNE TWISTER PRNG state
+#           name                          str                  String "MT19937"
+#           keys                          uint32[624]          Keys.
+#           pos                           uint32               Position in keys
+#           has_gauss                     uint32               Have Gaussian?
+#           cached_gaussian               float64              Cached Gaussian
+#         src.tar.gz                      uint8[]              Source code as of invocation time.
+#         argv                            str[]                Arguments as of invocation time.
+#         unixTimeStarted                 float64              Invocation time.
+#         consistent                      uint64               Is session consistent (all components of "filesystem" created and initialized sanely)?
+#       snapshot/                                              Snapshots.
+#         atomic                          uint64               Atomic toggle indicating if snapshot 0/ or 1/ is the current state.
+#         0/                                                   Snapshot 0.
+#           currKITNN/                                         Current KITNN.
+#             data/                                            Training 
+#               parameters/                                    Parameters.
+#                 <paramHierarchy>        T                    *** MODEL-DEPENDENT ***
+#               velocities/                                    Velocities for momentum methods
+#                 <paramHierarchy>        T                    *** MODEL-DEPENDENT ***
+#             misc/                                            Miscellaneous state
+#               mC                        str                  Name of continuation function to be called.
+#               PRNG/                                          Numpy MERSENNE TWISTER PRNG state
+#                 name                    str                  String "MT19937"
+#                 keys                    uint32[624]          Keys.
+#                 pos                     uint32               Position in keys
+#                 has_gauss               uint32               Have Gaussian?
+#                 cached_gaussian         float64              Cached Gaussian
+#               mE                        uint64               Epoch #
+#               mTTI                      uint64               Train-over-Training Index
+#               mCTI                      uint64               Check-over-Training Index
+#               mCVI                      uint64               Check-over-Validation Index
+#               mCTErrCnt                 uint64               Errors committed over training set check
+#               mCVErrCnt                 uint64               Errors committed over validation set check
+#             log/                                             Logging of metrics.
+#               trainLoss                 float64[*]           Logging of training loss (NLL).
+#               trainErr                  float64[*]           Logging of training error %.
+#               validErr                  float64[*]           Logging of validation error %.
+#           bestKITNN/                                         Best KITNN so far.
+#             ...                                              Same as currKITNN/
+#         1/                                                   Snapshot 1.
+#           ...                                                Same as 0/
 #     2/
 #     3/
 #     4/
-#     ...
+#       ...
 #
 
+###############################################################################
+# KITNN training process PSEUDOCODE!!!!
+def kitnnTrain():
+	#
+	# READ-ONLY VARS:
+	# - kTB                                  Training Batch Size.
+	# - kCB                                  Check    Batch Size.
+	#
+	# READ-WRITE VARS:
+	# - <Numpy MT PRNG state>
+	# - mE                                   Epoch #
+	# - mTTI                                 Train-over-Training Index
+	# - mCTI                                 Check-over-Training Index
+	# - mCVI                                 Check-over-Validation Index
+	# - mCTErrCnt                            Errors committed over training set check
+	# - mCVErrCnt                            Errors committed over validation set check
+	# - mCVBestErrCnt                        Errors committed by best model so far in check over validation set
+	#
+	
+	self.mE = 0
+	while True: #For each epoch,
+		# Progress indexes
+		self.mTTI = 0
+		self.mCTI = 0
+		self.mCVI = 0
+		self.printStatus(snap=False)
+		
+		# Train over Training Set
+		while(self.mTTI + kTB < NUM_TRAIN):
+			self.uploadTrainData(self.mTTI, kCB)
+			loss = self.invokeTrainF()
+			
+			self.mTTI += kTB
+			self.log({"trainLoss":float(loss)})
+			
+			self.printStatus(snap=self.shouldTTSnap)
+		self.printStatus(snap=True)
+		
+		# Check over Training Set
+		while(self.mCTI + kCB < NUM_TRAIN):
+			self.uploadTrainData(self.mCTI, kCB)
+			yEst = self.invokeClassF()
+			
+			self.mCTI      += kCB
+			self.mCTErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+			
+			self.printStatus(snap=self.shouldCTSnap)
+		self.log({"trainErr":float(self.mCTErrCnt)/self.mCTI})
+		self.printStatus(snap=True)
+		
+		# Check over Validation Set
+		while(self.mCVI + kCB < NUM_VALID):
+			self.uploadValidData(self.mCVI, kCB)
+			yEst = self.invokeClassF()
+			
+			self.mCVI      += kCB
+			self.mCVErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+			
+			self.printStatus(snap=self.shouldCVSnap)
+		self.log({"validErr":float(self.mCVErrCnt)/self.mCVI})
+		self.printStatus(snap=False)
+		
+		# Save if best model so far.
+		self.saveIfBestSoFar()
+		
+		#Increment epoch number
+		self.mE += 1
+		self.printStatus(snap=True, newLine=True)
 
 
-# Global constants (hopefully).
+###############################################################################
+# Global constants.
+#
+
 H5PY_VLEN_STR = H.special_dtype(vlen=str)
 
+#
+# SqueezeNet configuration
+#
+
+conv1  =  48;
+f2_s1  =  16; f2_e1 =  32; f2_e3 =  32; f2_e = f2_e1 + f2_e3;
+f3_s1  =  16; f3_e1 =  32; f3_e3 =  32; f3_e = f3_e1 + f3_e3;
+f4_s1  =  32; f4_e1 =  64; f4_e3 =  64; f4_e = f4_e1 + f4_e3;
+f5_s1  =  32; f5_e1 =  64; f5_e3 =  64; f5_e = f5_e1 + f5_e3;
+f6_s1  =  48; f6_e1 =  96; f6_e3 =  96; f6_e = f6_e1 + f6_e3;
+f7_s1  =  48; f7_e1 =  96; f7_e3 =  96; f7_e = f7_e1 + f7_e3;
+f8_s1  =  64; f8_e1 = 128; f8_e3 = 128; f8_e = f8_e1 + f8_e3;
+f9_s1  =  64; f9_e1 = 128; f9_e3 = 128; f9_e = f9_e1 + f9_e3;
+conv10 =   2;
+
+PARAMS_DICT = {
+	"pConv1W"     : {"dtype": "float32", "shape": ( conv1,      3,  7,  7), "broadcast": (False, False, False, False), "isBias": False},
+	"pConv1B"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire2CompW" : {"dtype": "float32", "shape": ( f2_s1,  conv1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire2CompB" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire2Exp1W" : {"dtype": "float32", "shape": ( f2_e1,  f2_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire2Exp1B" : {"dtype": "float32", "shape": (     1,  f2_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire2Exp3W" : {"dtype": "float32", "shape": ( f2_e3,  f2_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire2Exp3B" : {"dtype": "float32", "shape": (     1,  f2_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire3CompW" : {"dtype": "float32", "shape": ( f3_s1,  f2_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire3CompB" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire3Exp1W" : {"dtype": "float32", "shape": ( f3_e1,  f3_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire3Exp1B" : {"dtype": "float32", "shape": (     1,  f3_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire3Exp3W" : {"dtype": "float32", "shape": ( f3_e3,  f3_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire3Exp3B" : {"dtype": "float32", "shape": (     1,  f3_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire4CompW" : {"dtype": "float32", "shape": ( f4_s1,  f3_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire4CompB" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire4Exp1W" : {"dtype": "float32", "shape": ( f4_e1,  f4_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire4Exp1B" : {"dtype": "float32", "shape": (     1,  f4_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire4Exp3W" : {"dtype": "float32", "shape": ( f4_e3,  f4_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire4Exp3B" : {"dtype": "float32", "shape": (     1,  f4_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire5CompW" : {"dtype": "float32", "shape": ( f5_s1,  f4_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire5CompB" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire5Exp1W" : {"dtype": "float32", "shape": ( f5_e1,  f5_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire5Exp1B" : {"dtype": "float32", "shape": (     1,  f5_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire5Exp3W" : {"dtype": "float32", "shape": ( f5_e3,  f5_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire5Exp3B" : {"dtype": "float32", "shape": (     1,  f5_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire6CompW" : {"dtype": "float32", "shape": ( f6_s1,  f5_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire6CompB" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire6Exp1W" : {"dtype": "float32", "shape": ( f6_e1,  f6_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire6Exp1B" : {"dtype": "float32", "shape": (     1,  f6_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire6Exp3W" : {"dtype": "float32", "shape": ( f6_e3,  f6_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire6Exp3B" : {"dtype": "float32", "shape": (     1,  f6_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire7CompW" : {"dtype": "float32", "shape": ( f7_s1,  f6_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire7CompB" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire7Exp1W" : {"dtype": "float32", "shape": ( f7_e1,  f7_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire7Exp1B" : {"dtype": "float32", "shape": (     1,  f7_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire7Exp3W" : {"dtype": "float32", "shape": ( f7_e3,  f7_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire7Exp3B" : {"dtype": "float32", "shape": (     1,  f7_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire8CompW" : {"dtype": "float32", "shape": ( f8_s1,  f7_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire8CompB" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire8Exp1W" : {"dtype": "float32", "shape": ( f8_e1,  f8_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire8Exp1B" : {"dtype": "float32", "shape": (     1,  f8_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire8Exp3W" : {"dtype": "float32", "shape": ( f8_e3,  f8_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire8Exp3B" : {"dtype": "float32", "shape": (     1,  f8_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire9CompW" : {"dtype": "float32", "shape": ( f9_s1,  f8_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire9CompB" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire9Exp1W" : {"dtype": "float32", "shape": ( f9_e1,  f9_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire9Exp1B" : {"dtype": "float32", "shape": (     1,  f9_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pFire9Exp3W" : {"dtype": "float32", "shape": ( f9_e3,  f9_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+	"pFire9Exp3B" : {"dtype": "float32", "shape": (     1,  f9_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+	"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+	"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True }}
 
 #
-# Open a session file.
+# KITNN training function entry point
 #
 
-def kitnnOpenFile(filePath, argv):
+KITNN_TRAIN_ENTRY_POINT = "fn"  # FIXME: Change this to the real name!
+
+
+###############################################################################
+# KITNN training session management.
+
+#
+# Open a KITNN file.
+#
+
+def KFOpen(filePath):
 	f = H.File(filePath, "a")           # Create file
 	f.require_group("/sessions")        # Ensure a sessions group exists
-	
-	kitnnDeleteInconsistent(f)
-	s = kitnnCreateNextConsistent(f, argv)
-	
-	
-
+	return f
 
 #
-# Delete sessions with no consistent snapshots.
+# Prune inconsistent sessions from a file.
 #
 
-def kitnnDeleteInconsistent(f):
+def KFPruneInconsistentSessions(f):
 	for d in f["/sessions"].keys():
-		print "Key:", d
-		if f.get("/sessions/"+d+"/meta/lastConsistentSnapshot", -1) == -1:
+		if f.get("/sessions/"+d+"/meta/consistent", 0)[()] == 0:
+			print("Prunning inconsistent session \""+d+"\" ...")
 			del f["/sessions/"+d]
 
 #
-# Create the next consistent session.
+# Create a consistent session in a file and return it.
+#
+# Accepts a dictionary of arguments in case this interests the initialization routine.
+#
+# NOTE: Assumes all sessions in the file are consistent!
 #
 
-def kitnnCreateNextConsistent(f, argv):
+def KFCreateConsistentSession(f, **kwargs):
 	sessions = sorted(f["/sessions"].keys(), key=int)
-	
-	#
-	# If there are no existing sessions, create one numbered "1" and randomly
-	# initialize it.
-	#
-	# Otherwise copy over the highest-numbered session to a new session with
-	# an incremented session number.
-	#
 	
 	if len(sessions) == 0:
 		n = 1
-		sess = kitnnInitSessionRandom(f.require_group("/sessions/"+str(n)),
-		                              argv)
+		
+		oldSess = None
+		newSess = f.require_group("/sessions/"+str(n))
 	else:
 		o = sessions[-1]
 		n = str(int(o)+1)
-		sess = kitnnInitSessionFrom(f.require_group("/sessions/"+str(n)),
-		                            f.require_group("/sessions/"+str(o)),
-		                            argv)
-	
-	return sess
+		
+		oldSess = f.require_group("/sessions/"+str(o))
+		newSess = f.require_group("/sessions/"+str(n))
+		
+	return KSInitSession(newSess, oldSess, **kwargs)
 
 #
-# Randomly initialize a session named sess.
+# Flush changes made to a file, group or dataset to disk.
 #
 
-def kitnnInitSessionRandom(sess, argv):
-	sess.create_dataset("snap/0/val", data=np.ones((100,100), dtype="float32"))
-	sess.create_dataset("snap/1/val", data=np.ones((100,100), dtype="float32"))
-	sess.create_dataset("meta/src.tar.gz", data=kitnnTarGzSource())
-	sess.create_dataset("meta/argv", data=argv, dtype=H5PY_VLEN_STR)
-	sess.create_dataset("meta/unixTimeStarted",
-	                    data=np.full((), time.time(), dtype="float64"))
-	sess.create_dataset("meta/lastConsistentSnapshot",
-	                    data=np.full((), -1, dtype="uint64"))
-	
-	
-	return kitnnMarkSessionConsistent(sess)
+def KFFlush(h5pyFileOrGroupOrDataset):
+	h5pyFileOrGroupOrDataset.file.flush()
 
 #
-# Copy-initialize a session named sess from an old, consistent session named
-# oldSess.
+# Delete unconditionally a path from the file, whether or not it previously
+# existed.
 #
 
-def kitnnInitSessionFrom(sess, oldSess, argv):
-	#
-	# We copy all but meta/lastConsistentSnapshot
-	#
+def KFDeletePaths(h5pyFileOrGroup, pathList):
+	if(type(pathList) == str): pathList = [pathList]
 	
-	def visitor(name):
-		if name != "meta/lastConsistentSnapshot" and \
-		   name != "meta/unixTimeStarted"        and \
-		   name != "meta/argv"                   and \
-		   name != "meta/src.tar.gz":
-			if type(oldSess[name]) == H.Group:
-				sess.create_group(name)
-			else:
-				sess.create_dataset(name, data=oldSess[name][...])
-	
-	oldSess.visit(visitor)
-	
-	#
-	# We copy meta/lastConsistentSnapshot last, ensuring that the snapshot is
-	# only valid once the copy is complete. We also timestamp this.
-	#
-	
-	sess.create_dataset("meta/src.tar.gz", data=kitnnTarGzSource())
-	sess.create_dataset("meta/argv", data=argv, dtype=H5PY_VLEN_STR)
-	sess.create_dataset("meta/unixTimeStarted",
-	                    data=np.full((), time.time(), dtype="float64"))
-	sess.create_dataset("meta/lastConsistentSnapshot",
-	                    data=np.full((), -1, dtype="uint64"))
-	snapNum = oldSess["meta/lastConsistentSnapshot"][...]
-	return kitnnMarkSessionConsistent(sess, snapNum)
+	for p in pathList:
+		if p in h5pyFileOrGroup:
+			del h5pyFileOrGroup[p]
 
 #
-# Mark snapshot numbered snapNum of session sess as consistent.
+# Initialize a new session.
+#
+# If an old, template session is provided, copy the session. It is assumed the old session provided is
+# consistent.
+#
+# If no template session is provided, initialize completely randomly.
 #
 
-def kitnnMarkSessionConsistent(sess, snapNum=0):
-	snapNum = int(snapNum)
+def KSInitSession(newSess, oldSess, **kwargs):
+	# Write the metadata.
+	KFDeletePaths(newSess, ["meta/initPRNG",
+	                        "meta/src.tar.gz",
+	                        "meta/argv",
+	                        "meta/unixTimeStarted",
+	                        "meta/consistent"])
 	
-	# Release barrier. All previous writes must precede this atomic operation.
-	sess.file.flush()
+	initPRNG        = np.random.get_state()
+	tarGzSrc        = KFSrcTarGz()
+	unixTimeStarted = np.full((), time.time(), dtype="float64")
+	consistent      = np.full((), 0, dtype="uint64")
 	
-	#
-	# At this point snapshot s is consistent, except for the flag that declares
-	# it so. We now set this flag.
-	#
+	KDWritePRNG(newSess.require_group("meta/initPRNG"), data=initPRNG)
+	newSess.create_dataset("meta/src.tar.gz",           data=tarGzSrc)
+	newSess.create_dataset("meta/argv",                 data=sys.argv, dtype=H5PY_VLEN_STR)
+	newSess.create_dataset("meta/unixTimeStarted",      data=unixTimeStarted)
+	newSess.create_dataset("meta/consistent",           data=consistent)
 	
-	sess["meta/lastConsistentSnapshot"][()] = snapNum
-	sess.file.flush()
+	# Get or generate the data.
+	if oldSess == None:
+		#
+		# If no sessions exist, initialize snapshot 0/ randomly, then make a
+		# copy of it to 1/ and declare 0/ to be the current one using the
+		# atomic flag.
+		#
+		
+		KSInitSnapshotRandom(newSess.require_group("snapshot/0"), **kwargs)
+		newSess.copy("snapshot/0", "snapshot/1")
+		newSess.create_dataset("snapshot/atomic", data=np.full((), 0, dtype="uint64"))
+	else:
+		#
+		# If a session does exist then just copy over the snapshots but not the metadata.
+		#
+		
+		assert(oldSess.get("meta/consistent", 0)[()] == 1)
+		oldSess.copy("snapshot", newSess)                 # Copy oldSess/shapshot to newSess/snapshot
 	
-	#
-	# EITHER:
-	#   - This write makes it back to the filesystem, and the snapshot is
-	#      consistent.
-	# OR
-	#   - This write doesn't make it back to the filesystem (because of, i.e.,
-	#     SIGINT), in which case the snapshot will be believed inconsistent and
-	#     only the previous snapshot (if any) will be believed consistent.
-	#
+	# Mark as consistent.
+	KFFlush(newSess)
+	newSess["meta/consistent"][()] = 1
+	KFFlush(newSess)
 	
-	return sess
+	# Return new session
+	return newSess
+
+#
+# Write Numpy MT PRNG state to given group.
+#
+
+def KDWritePRNG(group, data):
+	KFDeletePaths(group, ["name", "keys", "pos", "has_gauss", "cached_gaussian"])
+	
+	group.create_dataset("name",            data=data[0], dtype=H5PY_VLEN_STR)
+	group.create_dataset("keys",            data=data[1])
+	group.create_dataset("pos",             data=data[2])
+	group.create_dataset("has_gauss",       data=data[3])
+	group.create_dataset("cached_gaussian", data=data[4])
+
+#
+# Read Numpy MT PRNG state from a given group.
+#
+
+def KDReadPRNG(group):
+	name            = str     (group["name"           ][()])
+	keys            = np.array(group["keys"           ][...])
+	pos             = int     (group["pos"            ][()])
+	has_gauss       = int     (group["has_gauss"      ][()])
+	cached_gaussian = float   (group["cached_gaussian"][()])
+	
+	return (name, keys, pos, has_gauss, cached_gaussian)
 
 #
 # Gzip own source code.
 #
 
-def kitnnTarGzSource():
+def KFSrcTarGz():
 	# Get coordinates of files to crush
 	kitnnSrcBase = os.path.dirname(os.path.abspath(__file__))
 	sourceFiles = ["kitnn.py", "inpainter.cpp"]
@@ -250,75 +439,54 @@ def kitnnTarGzSource():
 	return tarGzSource
 
 #
-# Get the source code of this module (the contents of this very file) and the
-# arguments that were passed to it.
+# Initialize a snapshot with random weights.
 #
 
-def getArgsAndSrcs():
-	args = sys.argv
-	srcs = inspect.getsource(sys.modules[__name__])
+def KSInitSnapshotRandom(snap, **kwargs):
+	# currKITNN/data folder.
+	for (name, desc) in PARAMS_DICT.iteritems():
+		dtype     = desc["dtype"]
+		shape     = desc["shape"]
+		braodcast = desc["broadcast"]
+		isBias    = desc["isBias"]
+		
+		# parameters/ subfolder.
+		if isBias:
+			value  = np.zeros(shape, dtype)
+		else:
+			gain   = np.sqrt(2)
+			stddev = gain * np.sqrt(2.0 / np.sum(shape[0:2]))
+			value  = np.random.normal(scale=stddev, size=shape)
+		snap.require_dataset("currKITNN/data/parameters/"+name, shape, dtype, exact=True)[...] = value
+		
+		# velocities subfolder.
+		snap.require_dataset("currKITNN/data/velocities/"+name, shape, dtype, exact=True)[...] = np.zeros_like(value)
 	
-	return (args, srcs)
-
-#
-# Save arguments and source code into given HDF5 group.
-#
-
-def saveArgsAndSrcs(group, args, src):
-	# Store arguments.
-	group.create_dataset("args", dtype=H5PY_VLEN_STR, data=args)
+	# currKITNN/log folder
+	KFDeletePaths(snap, ["currKITNN/log/trainLoss",
+	                     "currKITNN/log/trainErr",
+	                     "currKITNN/log/validErr"])
+	snap.require_dataset("currKITNN/log/trainLoss", (0,), "float64", maxshape=(None,))
+	snap.require_dataset("currKITNN/log/trainErr",  (0,), "float64", maxshape=(None,))
+	snap.require_dataset("currKITNN/log/validErr",  (0,), "float64", maxshape=(None,))
 	
-	# Store source code.
-	group.create_dataset("src",  dtype=H5PY_VLEN_STR, data=src)
-
-
-
-
-
-#
-# Default parameter store
-#
-
-DEFAULT_FILEPATH = "params.hdf5"
-
-
-#
-# Get shared-variable source.
-#
-# For now, must be none.
-#
-
-def getSource(filepath=DEFAULT_FILEPATH):
-	if(os.path.exists(filepath)):
-		return filepath
-	else:
-		return None
-
-
-#
-# Initialize a weights vector using uniform distribution, appropriately ranged.
-#
-
-def initWeights(size):
-    n = np.prod(size)
-    c = np.sqrt(2.0/n)
-    return np.random.normal(0, c, size).astype(TC.floatX)
-
-#
-# Initialize a bias vector using ones.
-#
-
-def initBiases(size):
-    return np.zeros(size, dtype=TC.floatX)
-
-#
-# Initialize a float scalar.
-#
-
-def initScalar(s):
-    sv = np.zeros((), dtype=TC.floatX)
-    sv[()] = s
-    return sv
+	# currKITNN/misc folder.
+	snap.require_dataset("currKITNN/misc/mC",        (), H5PY_VLEN_STR, exact=True)[...] = KITNN_TRAIN_ENTRY_POINT
+	snap.require_dataset("currKITNN/misc/mE",        (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("currKITNN/misc/mTTI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("currKITNN/misc/mCTI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("currKITNN/misc/mCVI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("currKITNN/misc/mCTErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
+	snap.require_dataset("currKITNN/misc/mCVErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
+	
+	# We do PRNG before-last.
+	KDWritePRNG(snap.require_group("currKITNN/misc/PRNG"), np.random.get_state())
+	
+	# Lastly, we copy currKITNN to bestKITNN.
+	snap.copy("currKITNN", "bestKITNN")
+	
+	# Return
+	return snap
 
 #
 # Init shared variables.
@@ -428,7 +596,7 @@ def constructTheanoFuncs(SV):
 	vConv1        = TTN .relu   (vConv1Act)
 	
 	######################  maxpool1
-	vMaxpool1     = TTSP.pool_2d(vLconv1, ds=(3,3), False, st=(2,2), "max")
+	vMaxpool1     = TTSP.pool_2d(vLconv1, (3,3), False, (2,2), "max")
 	
 	######################  fire2
 	vFire2CompAct = TTNC.conv2d (vMaxpool1,  pFire2CompW, None, None, "half", (1,1)) + pFire2CompB
@@ -458,7 +626,7 @@ def constructTheanoFuncs(SV):
 	vFire4        = TT  .stack  ([vFire4Exp1, vFire4Exp3], axis=1);
 	
 	######################  maxpool4
-	vMaxpool4     = TTSP.pool_2d(vFire4, ds=(3,3), False, st=(2,2), "max")
+	vMaxpool4     = TTSP.pool_2d(vFire4, (3,3), False, (2,2), "max")
 	
 	######################  fire5
 	vFire5CompAct = TTNC.conv2d (vMaxpool4,  pFire5CompW, None, None, "half", (1,1)) + pFire5CompB
@@ -497,7 +665,7 @@ def constructTheanoFuncs(SV):
 	vFire8        = TT  .stack  ([vFire8Exp1, vFire8Exp3], axis=1);
 	
 	######################  maxpool8
-	vMaxpool8     = TTSP.pool_2d(vFire8, ds=(3,3), False, st=(2,2), "max")
+	vMaxpool8     = TTSP.pool_2d(vFire8, (3,3), False, (2,2), "max")
 	
 	######################  fire9
 	vFire9CompAct = TTNC.conv2d (vMaxpool8,  pFire9CompW, None, None, "half", (1,1)) + pFire9CompB
@@ -513,7 +681,7 @@ def constructTheanoFuncs(SV):
 	vConv10       = TTN .relu   (vConv10Act)
 	
 	######################  avgpool10
-	vAvgpool10    = TTSP.pool_2d(vConv10, ds=(12,12), True, st=(1,1), "average_exc_pad")
+	vAvgpool10    = TTSP.pool_2d(vConv10, (12,12), True, (1,1), "average_exc_pad")
 	
 	######################  Softmax
 	vSMi          = vAvgpool10
@@ -602,7 +770,7 @@ class KITNNTrainer(object):
 		
 		#
 		# IMPORTANT:
-		# 
+		#
 		# The below is a critical part of the continuation-passing style used
 		# in train(). It's what allows finegrained resumable training.
 		#
@@ -743,7 +911,7 @@ class KITNNTrainer(object):
 	# Print status
 	#
 	
-	def setAndPrintState(newState=None, newLine=False, doPrint=True):
+	def setAndPrintState(self, newState=None, newLine=False, doPrint=True):
 		# Set current state to new state
 		if(newState != None):
 			self.state = newState
@@ -817,10 +985,10 @@ class KITNN(object):
 	
 	#
 	# Train update.
-	# 
+	#
 	# Performs forwardprop, backprop and update by invoking the training
 	# function.
-	# 
+	#
 	# Returns the training function's return values.
 	#
 	
@@ -857,6 +1025,9 @@ taken, plus optional arguments. The following verbs are defined:
 
 """[1:-1] #This hack deletes the newlines before and after the triple quotes.
 	)
+	
+	pdb.set_trace()
+
 
 
 #
@@ -899,9 +1070,32 @@ def verb_train(argv=None):
 #
 
 def verb_screw(argv=None):
-	kitnnOpenFile(argv[2], argv)
+	f = KFOpen(argv[2])
+	KFPruneInconsistentSessions(f)
+	s = KFCreateConsistentSession(f)
 
 
+#
+# Screw around.
+#
+
+def verb_interactive(argv=None):
+	pdb.set_trace()
+
+
+#
+# Dump parameter dict
+#
+
+def verb_dumpparamdict(argv):
+	totalParams = 0
+	
+	for (k,v) in sorted(PARAMS_DICT.iteritems()):
+		vShape        = v["shape"]
+		vNumParams    = np.prod(vShape)
+		totalParams  += vNumParams
+		print("{:20s}: {:10d}".format(k, vNumParams))
+	print("{:20s}: {:10d}".format("TOTAL", totalParams))
 
 
 #
@@ -913,9 +1107,6 @@ def verb_dumpsrcs(argv):
 	gz = bytearray(f["/sessions/"+argv[3]+"/meta/src.tar.gz"])
 	sys.stdout.write(gz)
 	f.close()
-
-
-
 
 #
 # Dump arguments of session
@@ -950,11 +1141,11 @@ if __name__ == "__main__":
 
 # pool_2d(input, ds, ignore_border=None, st=None, padding=(0, 0), mode='max')
 #     Downscale the input by a specified factor
-#     
+#
 #     Takes as input a N-D tensor, where N >= 2. It downscales the input image by
 #     the specified factor, by keeping only the maximum value of non-overlapping
 #     patches of size (ds[0],ds[1])
-#     
+#
 #     Parameters
 #     ----------
 #     input : N-D theano tensor of input images
@@ -984,35 +1175,35 @@ if __name__ == "__main__":
 #     This function will build the symbolic graph for convolving a mini-batch of a
 #     stack of 2D inputs with a set of 2D filters. The implementation is modelled
 #     after Convolutional Neural Networks (CNN).
-#     
-#     
+#
+#
 #     Parameters
 #     ----------
 #     input: symbolic 4D tensor
 #         Mini-batch of feature map stacks, of shape
 #         (batch size, input channels, input rows, input columns).
 #         See the optional parameter ``input_shape``.
-#     
+#
 #     filters: symbolic 4D tensor
 #         Set of filters used in CNN layer of shape
 #         (output channels, input channels, filter rows, filter columns).
 #         See the optional parameter ``filter_shape``.
-#     
+#
 #     input_shape: None, tuple/list of len 4 of int or Constant variable
 #         The shape of the input parameter.
 #         Optional, possibly used to choose an optimal implementation.
 #         You can give ``None`` for any element of the list to specify that this
 #         element is not known at compile time.
-#     
+#
 #     filter_shape: None, tuple/list of len 4 of int or Constant variable
 #         The shape of the filters parameter.
 #         Optional, possibly used to choose an optimal implementation.
 #         You can give ``None`` for any element of the list to specify that this
 #         element is not known at compile time.
-#     
+#
 #     border_mode: str, int or tuple of two int
 #         Either of the following:
-#     
+#
 #         ``'valid'``: apply filter wherever it completely overlaps with the
 #             input. Generates output of shape: input shape - filter shape + 1
 #         ``'full'``: apply filter wherever it partly overlaps with the input.
@@ -1025,34 +1216,34 @@ if __name__ == "__main__":
 #             width, then perform a valid convolution.
 #         ``(int1, int2)``: pad input with a symmetric border of ``int1`` rows
 #             and ``int2`` columns, then perform a valid convolution.
-#     
+#
 #     subsample: tuple of len 2
 #         Factor by which to subsample the output.
 #         Also called strides elsewhere.
-#     
+#
 #     filter_flip: bool
 #         If ``True``, will flip the filter rows and columns
 #         before sliding them over the input. This operation is normally referred
 #         to as a convolution, and this is the default. If ``False``, the filters
 #         are not flipped and the operation is referred to as a cross-correlation.
-#     
+#
 #     image_shape: None, tuple/list of len 4 of int or Constant variable
 #         Deprecated alias for input_shape.
-#     
+#
 #     kwargs: Any other keyword arguments are accepted for backwards
 #             compatibility, but will be ignored.
-#     
+#
 #     Returns
 #     -------
 #     Symbolic 4D tensor
 #         Set of feature maps generated by convolutional layer. Tensor is
 #         of shape (batch size, output channels, output rows, output columns)
-#     
+#
 #     Notes
 #     -----
 #         If CuDNN is available, it will be used on the
 #         GPU. Otherwise, it is the *CorrMM* convolution that will be used
 #         "caffe style convolution".
-#     
+#
 #         This is only supported in Theano 0.8 or the development
 #         version until it is released.
