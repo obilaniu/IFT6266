@@ -605,7 +605,7 @@ def constructTheanoFuncs(SV):
 	vFire2Exp1    = TTN .relu   (vFire2Exp1Act)
 	vFire2Exp3Act = TTNC.conv2d (vFire2Comp, pFire2Exp3W, None, None, "half", (1,1)) + pFire2Exp3B
 	vFire2Exp3    = TTN .relu   (vFire2Exp3Act)
-	vFire2        = TT  .stack  ([vFire2Exp1, vFire2Exp3], axis=1);
+	vFire2        = TT  .concatenate([vFire2Exp1, vFire2Exp3], axis=1);
 	
 	######################  fire3
 	vFire3CompAct = TTNC.conv2d (vFire2,     pFire3CompW, None, None, "half", (1,1)) + pFire3CompB
@@ -614,7 +614,7 @@ def constructTheanoFuncs(SV):
 	vFire3Exp1    = TTN .relu   (vFire3Exp1Act)
 	vFire3Exp3Act = TTNC.conv2d (vFire3Comp, pFire3Exp3W, None, None, "half", (1,1)) + pFire3Exp3B
 	vFire3Exp3    = TTN .relu   (vFire3Exp3Act)
-	vFire3        = TT  .stack  ([vFire3Exp1, vFire3Exp3], axis=1);
+	vFire3        = TT  .concatenate([vFire3Exp1, vFire3Exp3], axis=1);
 	
 	######################  fire4
 	vFire4CompAct = TTNC.conv2d (vFire3,     pFire4CompW, None, None, "half", (1,1)) + pFire4CompB
@@ -623,7 +623,7 @@ def constructTheanoFuncs(SV):
 	vFire4Exp1    = TTN .relu   (vFire4Exp1Act)
 	vFire4Exp3Act = TTNC.conv2d (vFire4Comp, pFire4Exp3W, None, None, "half", (1,1)) + pFire4Exp3B
 	vFire4Exp3    = TTN .relu   (vFire4Exp3Act)
-	vFire4        = TT  .stack  ([vFire4Exp1, vFire4Exp3], axis=1);
+	vFire4        = TT  .concatenate([vFire4Exp1, vFire4Exp3], axis=1);
 	
 	######################  maxpool4
 	vMaxpool4     = TTSP.pool_2d(vFire4, (3,3), False, (2,2), "max")
@@ -635,7 +635,7 @@ def constructTheanoFuncs(SV):
 	vFire5Exp1    = TTN .relu   (vFire5Exp1Act)
 	vFire5Exp3Act = TTNC.conv2d (vFire5Comp, pFire5Exp3W, None, None, "half", (1,1)) + pFire5Exp3B
 	vFire5Exp3    = TTN .relu   (vFire5Exp3Act)
-	vFire5        = TT  .stack  ([vFire5Exp1, vFire5Exp3], axis=1);
+	vFire5        = TT  .concatenate([vFire5Exp1, vFire5Exp3], axis=1);
 	
 	######################  fire6
 	vFire6CompAct = TTNC.conv2d (vFire5,     pFire6CompW, None, None, "half", (1,1)) + pFire6CompB
@@ -644,7 +644,7 @@ def constructTheanoFuncs(SV):
 	vFire6Exp1    = TTN .relu   (vFire6Exp1Act)
 	vFire6Exp3Act = TTNC.conv2d (vFire6Comp, pFire6Exp3W, None, None, "half", (1,1)) + pFire6Exp3B
 	vFire6Exp3    = TTN .relu   (vFire6Exp3Act)
-	vFire6        = TT  .stack  ([vFire6Exp1, vFire6Exp3], axis=1);
+	vFire6        = TT  .concatenate([vFire6Exp1, vFire6Exp3], axis=1);
 	
 	######################  fire7
 	vFire7CompAct = TTNC.conv2d (vFire6,     pFire7CompW, None, None, "half", (1,1)) + pFire7CompB
@@ -653,7 +653,7 @@ def constructTheanoFuncs(SV):
 	vFire7Exp1    = TTN .relu   (vFire7Exp1Act)
 	vFire7Exp3Act = TTNC.conv2d (vFire7Comp, pFire7Exp3W, None, None, "half", (1,1)) + pFire7Exp3B
 	vFire7Exp3    = TTN .relu   (vFire7Exp3Act)
-	vFire7        = TT  .stack  ([vFire7Exp1, vFire7Exp3], axis=1);
+	vFire7        = TT  .concatenate([vFire7Exp1, vFire7Exp3], axis=1);
 	
 	######################  fire8
 	vFire8CompAct = TTNC.conv2d (vFire7,     pFire8CompW, None, None, "half", (1,1)) + pFire8CompB
@@ -662,7 +662,7 @@ def constructTheanoFuncs(SV):
 	vFire8Exp1    = TTN .relu   (vFire8Exp1Act)
 	vFire8Exp3Act = TTNC.conv2d (vFire8Comp, pFire8Exp3W, None, None, "half", (1,1)) + pFire8Exp3B
 	vFire8Exp3    = TTN .relu   (vFire8Exp3Act)
-	vFire8        = TT  .stack  ([vFire8Exp1, vFire8Exp3], axis=1);
+	vFire8        = TT  .concatenate([vFire8Exp1, vFire8Exp3], axis=1);
 	
 	######################  maxpool8
 	vMaxpool8     = TTSP.pool_2d(vFire8, (3,3), False, (2,2), "max")
@@ -674,7 +674,7 @@ def constructTheanoFuncs(SV):
 	vFire9Exp1    = TTN .relu   (vFire9Exp1Act)
 	vFire9Exp3Act = TTNC.conv2d (vFire9Comp, pFire9Exp3W, None, None, "half", (1,1)) + pFire9Exp3B
 	vFire9Exp3    = TTN .relu   (vFire9Exp3Act)
-	vFire9        = TT  .stack  ([vFire9Exp1, vFire9Exp3], axis=1);
+	vFire9        = TT  .concatenate([vFire9Exp1, vFire9Exp3], axis=1);
 	
 	######################  conv10
 	vConv10Act    = TTNC.conv2d (vFire9, pConv10W, None, None, "half", (1,1)) + pConv10B
