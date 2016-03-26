@@ -37,7 +37,7 @@ TOTALS:         NEURONS:                      PARAMETERS:
 #
 
 import ast
-import cPickle as pkl
+import cPickle                         as pkl
 import cStringIO
 import cv2
 import getopt
@@ -46,7 +46,7 @@ import h5py                            as H
 import inspect
 import io
 import math
-import numpy as np
+import numpy                           as np
 import os
 import pdb
 import sys
@@ -119,72 +119,72 @@ import time
 
 ###############################################################################
 # KITNN training process PSEUDOCODE!!!!
-def kitnnTrain():
-	#
-	# READ-ONLY VARS:
-	# - kTB                                  Training Batch Size.
-	# - kCB                                  Check    Batch Size.
-	#
-	# READ-WRITE VARS:
-	# - <Numpy MT PRNG state>
-	# - mE                                   Epoch #
-	# - mTTI                                 Train-over-Training Index
-	# - mCTI                                 Check-over-Training Index
-	# - mCVI                                 Check-over-Validation Index
-	# - mCTErrCnt                            Errors committed over training set check
-	# - mCVErrCnt                            Errors committed over validation set check
-	# - mCVBestErrCnt                        Errors committed by best model so far in check over validation set
-	#
-	
-	self.mE = 0
-	while True: #For each epoch,
-		# Progress indexes
-		self.mTTI = 0
-		self.mCTI = 0
-		self.mCVI = 0
-		self.printStatus(snap=False)
-		
-		# Train over Training Set
-		while(self.mTTI + kTB < NUM_TRAIN):
-			self.uploadTrainData(self.mTTI, kCB)
-			loss = self.invokeTrainF()
-			
-			self.mTTI += kTB
-			self.log({"trainLoss":float(loss)})
-			
-			self.printStatus(snap=self.shouldTTSnap)
-		self.printStatus(snap=True)
-		
-		# Check over Training Set
-		while(self.mCTI + kCB < NUM_TRAIN):
-			self.uploadTrainData(self.mCTI, kCB)
-			yEst = self.invokeClassF()
-			
-			self.mCTI      += kCB
-			self.mCTErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
-			
-			self.printStatus(snap=self.shouldCTSnap)
-		self.log({"trainErr":float(self.mCTErrCnt)/self.mCTI})
-		self.printStatus(snap=True)
-		
-		# Check over Validation Set
-		while(self.mCVI + kCB < NUM_VALID):
-			self.uploadValidData(self.mCVI, kCB)
-			yEst = self.invokeClassF()
-			
-			self.mCVI      += kCB
-			self.mCVErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
-			
-			self.printStatus(snap=self.shouldCVSnap)
-		self.log({"validErr":float(self.mCVErrCnt)/self.mCVI})
-		self.printStatus(snap=False)
-		
-		# Save if best model so far.
-		self.saveIfBestSoFar()
-		
-		#Increment epoch number
-		self.mE += 1
-		self.printStatus(snap=True, newLine=True)
+#def kitnnTrain():
+#	#
+#	# READ-ONLY VARS:
+#	# - kTB                                  Training Batch Size.
+#	# - kCB                                  Check    Batch Size.
+#	#
+#	# READ-WRITE VARS:
+#	# - <Numpy MT PRNG state>
+#	# - mE                                   Epoch #
+#	# - mTTI                                 Train-over-Training Index
+#	# - mCTI                                 Check-over-Training Index
+#	# - mCVI                                 Check-over-Validation Index
+#	# - mCTErrCnt                            Errors committed over training set check
+#	# - mCVErrCnt                            Errors committed over validation set check
+#	# - mCVBestErrCnt                        Errors committed by best model so far in check over validation set
+#	#
+#	
+#	self.mE = 0
+#	while True: #For each epoch,
+#		# Progress indexes
+#		self.mTTI = 0
+#		self.mCTI = 0
+#		self.mCVI = 0
+#		self.printStatus(snap=False)
+#		
+#		# Train over Training Set
+#		while(self.mTTI + kTB < NUM_TRAIN):
+#			self.uploadTrainData(self.mTTI, kCB)
+#			loss = self.invokeTrainF()
+#			
+#			self.mTTI += kTB
+#			self.log({"trainLoss":float(loss)})
+#			
+#			self.printStatus(snap=self.shouldTTSnap)
+#		self.printStatus(snap=True)
+#		
+#		# Check over Training Set
+#		while(self.mCTI + kCB < NUM_TRAIN):
+#			self.uploadTrainData(self.mCTI, kCB)
+#			yEst = self.invokeClassF()
+#			
+#			self.mCTI      += kCB
+#			self.mCTErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+#			
+#			self.printStatus(snap=self.shouldCTSnap)
+#		self.log({"trainErr":float(self.mCTErrCnt)/self.mCTI})
+#		self.printStatus(snap=True)
+#		
+#		# Check over Validation Set
+#		while(self.mCVI + kCB < NUM_VALID):
+#			self.uploadValidData(self.mCVI, kCB)
+#			yEst = self.invokeClassF()
+#			
+#			self.mCVI      += kCB
+#			self.mCVErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+#			
+#			self.printStatus(snap=self.shouldCVSnap)
+#		self.log({"validErr":float(self.mCVErrCnt)/self.mCVI})
+#		self.printStatus(snap=False)
+#		
+#		# Save if best model so far.
+#		self.saveIfBestSoFar()
+#		
+#		#Increment epoch number
+#		self.mE += 1
+#		self.printStatus(snap=True, newLine=True)
 
 
 ###############################################################################
@@ -193,7 +193,8 @@ def kitnnTrain():
 
 H5PY_VLEN_STR = H.special_dtype(vlen=str)
 
-#
+
+###############################################################################
 # SqueezeNet configuration
 #
 
@@ -262,22 +263,52 @@ PARAMS_DICT = {
 	"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
 	"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True }}
 
-#
-# KITNN training function entry point
+
+
+###############################################################################
+# Dummy object class
 #
 
-KITNN_TRAIN_ENTRY_POINT = "fn"  # FIXME: Change this to the real name!
+class Object(object): pass
+
+
+###############################################################################
+# Utilities
+#
+
+#
+# Tensor padding.
+#
+
+def zpadT(x, padding=(1,1,1,1)):
+	u     = padding[0]
+	d     = padding[1]
+	l     = padding[2]
+	r     = padding[3]
+	shape = (x.shape[0],
+	         x.shape[1],
+	         x.shape[2]+u+d,
+	         x.shape[3]+l+r)
+	xpad  = TT.zeros(shape, x.dtype)
+	TT.set_subtensor(xpad[:,:,u:-d,l:-r], x)
+	return xpad
 
 
 ###############################################################################
 # KITNN training session management.
+#
+
+#
+# KITNN training function entry point
+#
+
+KITNN_TRAIN_ENTRY_POINT = "KTPrologue"
 
 #
 # Open a KITNN file.
 #
 
-def KFOpen(filePath):
-	f = H.File(filePath, "a")           # Create file
+def KFOpen(f):
 	f.require_group("/sessions")        # Ensure a sessions group exists
 	return f
 
@@ -315,6 +346,19 @@ def KFCreateConsistentSession(f, **kwargs):
 		newSess = f.require_group("/sessions/"+str(n))
 		
 	return KSInitSession(newSess, oldSess, **kwargs)
+
+#
+# Get last consistent session.
+#
+
+def KFGetLastConsistentSession(f, **kwargs):
+	sessions = sorted(f["/sessions"].keys(), key=int)
+	
+	for s in sessions:
+		if f.get("/sessions/"+s+"/meta/consistent", 0)[()] == 1:
+			return f["/sessions/"+s]
+	
+	return None
 
 #
 # Flush changes made to a file, group or dataset to disk.
@@ -488,269 +532,9 @@ def KSInitSnapshotRandom(snap, **kwargs):
 	# Return
 	return snap
 
-#
-# Init shared variables.
-#
-
-def getSVs(source=None):
-	if(source != None):
-		f = H.File(source, "a")
-		
-		for (name, param) in f["/param/"].items():
-			exec("value_"+name+" = param[...]")
-		
-		f.close()
-	else:
-		value_hLrn     = initScalar (0.05)             # Learning Rate
-		value_hMom     = initScalar (0.9)              # Momentum
-		value_hL1P     = initScalar (0.001)            # L1 penalty
-		value_hL2P     = initScalar (0.001)            # L2 penalty
-		value_pLaW     = initWeights((  64,   3,3,3))  #   64    3  3   3   convolution weights
-		value_pLaB     = initBiases ((   1,  64,1,1))  #   *    64  *   *   biases
-		value_pLcW     = initWeights(( 128,  64,3,3))  #  128   64  3   3   convolution weights
-		value_pLcB     = initBiases ((   1, 128,1,1))  #   *   128  *   *   biases
-		value_pLeW     = initWeights(( 256, 128,3,3))  #  256  128  3   3   convolution weights
-		value_pLeB     = initBiases ((   1, 256,1,1))  #   *   256  *   *   biases
-		value_pLfW     = initWeights(( 256, 256,3,3))  #  256  256  3   3   convolution weights
-		value_pLfB     = initBiases ((   1, 256,1,1))  #   *   256  *   *   biases
-		value_pLhW     = initWeights((1024, 256,1,1))  # 1024  256  1   1   convolution weights (Fully-connected)
-		value_pLhB     = initBiases ((   1,1024,1,1))  #   *  1024  *   *   biases
-		value_pLiW     = initWeights((1024,1024,1,1))  # 1024 1024  1   1   convolution weights (Fully-connected)
-		value_pLiB     = initBiases ((   1,1024,1,1))  #   *  1024  *   *   biases
-		value_pLiG     = initBiases ((   1,1024,1,1))  #   *  1024  *   *   gammas
-		value_pLjW     = initWeights((  10,1024,1,1))  #   10 1024  1   1   convolution weights (Fully-connected)
-		value_pLjB     = initBiases ((   1,  10,1,1))  #   *    10  *   *   biases
-	
-	hLrn           = T.shared(value_hLrn,  name="hLrn")
-	hMom           = T.shared(value_hMom,  name="hMom")
-	hL1P           = T.shared(value_hL1P,  name="hL1P")
-	hL2P           = T.shared(value_hL2P,  name="hL2P")
-	pLaW           = T.shared(value_pLaW,  name="pLaW")
-	pLaB           = T.shared(value_pLaB,  name="pLaB",  broadcastable=(True, False, True, True))
-	pLcW           = T.shared(value_pLcW,  name="pLcW")
-	pLcB           = T.shared(value_pLcB,  name="pLcB",  broadcastable=(True, False, True, True))
-	pLeW           = T.shared(value_pLeW,  name="pLeW")
-	pLeB           = T.shared(value_pLeB,  name="pLeB",  broadcastable=(True, False, True, True))
-	pLfW           = T.shared(value_pLfW,  name="pLfW")
-	pLfB           = T.shared(value_pLfB,  name="pLfB",  broadcastable=(True, False, True, True))
-	pLhW           = T.shared(value_pLhW,  name="pLhW")
-	pLhB           = T.shared(value_pLhB,  name="pLhB",  broadcastable=(True, False, True, True))
-	pLiW           = T.shared(value_pLiW,  name="pLiW")
-	pLiB           = T.shared(value_pLiB,  name="pLiB",  broadcastable=(True, False, True, True))
-	pLiG           = T.shared(value_pLiG,  name="pLiG",  broadcastable=(True, False, True, True))
-	pLjW           = T.shared(value_pLjW,  name="pLjW")
-	pLjB           = T.shared(value_pLjB,  name="pLjB",  broadcastable=(True, False, True, True))
-	
-	SVs = {}
-	for sv in [hLrn, hMom, hL1P, hL2P, pLaW, pLaB, pLcW, pLcB, pLeW, pLeB,
-	           pLfW, pLfB, pLhW, pLhB, pLiW, pLiB, pLiG, pLjW, pLjB]:
-		SVs[sv.name] = sv
-	
-	return SVs
 
 
-#
-# Dump SVs to HDF5
-#
 
-def dumpSVs(source, SV):
-	f = H.File(source, "a")
-	
-	for (name, param) in SV.iteritems():
-		value = param.get_value()
-		f.require_dataset("/param/"+name,
-		                  value.shape,
-		                  value.dtype,
-		                  exact=True)[...] = value
-	
-	f.close()
-
-
-#
-# Construct Theano functions.
-#
-# Need two:
-#  1. For training, which has inputs ix and iy, returns the loss, and updates
-#     the parameters.
-#  2. For classification, which has inputs ix and returns the softmax out.
-#
-
-def constructTheanoFuncs(SV):
-	#
-	# Classification function construction.
-	#
-	
-	# Input is ix.
-	ix = TT.tensor4("x") # (Batch=hB, #Channels=3, Height=192, Width=192)
-	
-	
-	##########################################################
-	# The math.                                              #
-	##########################################################
-	
-	######################  Input layer
-	vIn           = ix
-	
-	######################  conv1
-	vConv1Act     = TTNC.conv2d (vIn, pConv1W, None, None, "half", (2,2)) + pConv1B
-	vConv1        = TTN .relu   (vConv1Act)
-	
-	######################  maxpool1
-	vMaxpool1     = TTSP.pool_2d(vLconv1, (3,3), False, (2,2), "max")
-	
-	######################  fire2
-	vFire2CompAct = TTNC.conv2d (vMaxpool1,  pFire2CompW, None, None, "half", (1,1)) + pFire2CompB
-	vFire2Comp    = TTN .relu   (vFire2CompAct)
-	vFire2Exp1Act = TTNC.conv2d (vFire2Comp, pFire2Exp1W, None, None, "half", (1,1)) + pFire2Exp1B
-	vFire2Exp1    = TTN .relu   (vFire2Exp1Act)
-	vFire2Exp3Act = TTNC.conv2d (vFire2Comp, pFire2Exp3W, None, None, "half", (1,1)) + pFire2Exp3B
-	vFire2Exp3    = TTN .relu   (vFire2Exp3Act)
-	vFire2        = TT  .concatenate([vFire2Exp1, vFire2Exp3], axis=1);
-	
-	######################  fire3
-	vFire3CompAct = TTNC.conv2d (vFire2,     pFire3CompW, None, None, "half", (1,1)) + pFire3CompB
-	vFire3Comp    = TTN .relu   (vFire3CompAct)
-	vFire3Exp1Act = TTNC.conv2d (vFire3Comp, pFire3Exp1W, None, None, "half", (1,1)) + pFire3Exp1B
-	vFire3Exp1    = TTN .relu   (vFire3Exp1Act)
-	vFire3Exp3Act = TTNC.conv2d (vFire3Comp, pFire3Exp3W, None, None, "half", (1,1)) + pFire3Exp3B
-	vFire3Exp3    = TTN .relu   (vFire3Exp3Act)
-	vFire3        = TT  .concatenate([vFire3Exp1, vFire3Exp3], axis=1);
-	
-	######################  fire4
-	vFire4CompAct = TTNC.conv2d (vFire3,     pFire4CompW, None, None, "half", (1,1)) + pFire4CompB
-	vFire4Comp    = TTN .relu   (vFire4CompAct)
-	vFire4Exp1Act = TTNC.conv2d (vFire4Comp, pFire4Exp1W, None, None, "half", (1,1)) + pFire4Exp1B
-	vFire4Exp1    = TTN .relu   (vFire4Exp1Act)
-	vFire4Exp3Act = TTNC.conv2d (vFire4Comp, pFire4Exp3W, None, None, "half", (1,1)) + pFire4Exp3B
-	vFire4Exp3    = TTN .relu   (vFire4Exp3Act)
-	vFire4        = TT  .concatenate([vFire4Exp1, vFire4Exp3], axis=1);
-	
-	######################  maxpool4
-	vMaxpool4     = TTSP.pool_2d(vFire4, (3,3), False, (2,2), "max")
-	
-	######################  fire5
-	vFire5CompAct = TTNC.conv2d (vMaxpool4,  pFire5CompW, None, None, "half", (1,1)) + pFire5CompB
-	vFire5Comp    = TTN .relu   (vFire5CompAct)
-	vFire5Exp1Act = TTNC.conv2d (vFire5Comp, pFire5Exp1W, None, None, "half", (1,1)) + pFire5Exp1B
-	vFire5Exp1    = TTN .relu   (vFire5Exp1Act)
-	vFire5Exp3Act = TTNC.conv2d (vFire5Comp, pFire5Exp3W, None, None, "half", (1,1)) + pFire5Exp3B
-	vFire5Exp3    = TTN .relu   (vFire5Exp3Act)
-	vFire5        = TT  .concatenate([vFire5Exp1, vFire5Exp3], axis=1);
-	
-	######################  fire6
-	vFire6CompAct = TTNC.conv2d (vFire5,     pFire6CompW, None, None, "half", (1,1)) + pFire6CompB
-	vFire6Comp    = TTN .relu   (vFire6CompAct)
-	vFire6Exp1Act = TTNC.conv2d (vFire6Comp, pFire6Exp1W, None, None, "half", (1,1)) + pFire6Exp1B
-	vFire6Exp1    = TTN .relu   (vFire6Exp1Act)
-	vFire6Exp3Act = TTNC.conv2d (vFire6Comp, pFire6Exp3W, None, None, "half", (1,1)) + pFire6Exp3B
-	vFire6Exp3    = TTN .relu   (vFire6Exp3Act)
-	vFire6        = TT  .concatenate([vFire6Exp1, vFire6Exp3], axis=1);
-	
-	######################  fire7
-	vFire7CompAct = TTNC.conv2d (vFire6,     pFire7CompW, None, None, "half", (1,1)) + pFire7CompB
-	vFire7Comp    = TTN .relu   (vFire7CompAct)
-	vFire7Exp1Act = TTNC.conv2d (vFire7Comp, pFire7Exp1W, None, None, "half", (1,1)) + pFire7Exp1B
-	vFire7Exp1    = TTN .relu   (vFire7Exp1Act)
-	vFire7Exp3Act = TTNC.conv2d (vFire7Comp, pFire7Exp3W, None, None, "half", (1,1)) + pFire7Exp3B
-	vFire7Exp3    = TTN .relu   (vFire7Exp3Act)
-	vFire7        = TT  .concatenate([vFire7Exp1, vFire7Exp3], axis=1);
-	
-	######################  fire8
-	vFire8CompAct = TTNC.conv2d (vFire7,     pFire8CompW, None, None, "half", (1,1)) + pFire8CompB
-	vFire8Comp    = TTN .relu   (vFire8CompAct)
-	vFire8Exp1Act = TTNC.conv2d (vFire8Comp, pFire8Exp1W, None, None, "half", (1,1)) + pFire8Exp1B
-	vFire8Exp1    = TTN .relu   (vFire8Exp1Act)
-	vFire8Exp3Act = TTNC.conv2d (vFire8Comp, pFire8Exp3W, None, None, "half", (1,1)) + pFire8Exp3B
-	vFire8Exp3    = TTN .relu   (vFire8Exp3Act)
-	vFire8        = TT  .concatenate([vFire8Exp1, vFire8Exp3], axis=1);
-	
-	######################  maxpool8
-	vMaxpool8     = TTSP.pool_2d(vFire8, (3,3), False, (2,2), "max")
-	
-	######################  fire9
-	vFire9CompAct = TTNC.conv2d (vMaxpool8,  pFire9CompW, None, None, "half", (1,1)) + pFire9CompB
-	vFire9Comp    = TTN .relu   (vFire9CompAct)
-	vFire9Exp1Act = TTNC.conv2d (vFire9Comp, pFire9Exp1W, None, None, "half", (1,1)) + pFire9Exp1B
-	vFire9Exp1    = TTN .relu   (vFire9Exp1Act)
-	vFire9Exp3Act = TTNC.conv2d (vFire9Comp, pFire9Exp3W, None, None, "half", (1,1)) + pFire9Exp3B
-	vFire9Exp3    = TTN .relu   (vFire9Exp3Act)
-	vFire9        = TT  .concatenate([vFire9Exp1, vFire9Exp3], axis=1);
-	
-	######################  conv10
-	vConv10Act    = TTNC.conv2d (vFire9, pConv10W, None, None, "half", (1,1)) + pConv10B
-	vConv10       = TTN .relu   (vConv10Act)
-	
-	######################  avgpool10
-	vAvgpool10    = TTSP.pool_2d(vConv10, (12,12), True, (1,1), "average_exc_pad")
-	
-	######################  Softmax
-	vSMi          = vAvgpool10
-	vSMu          = TT.exp(vSMi - TT.max(vSMi, axis=1, keepdims=1))
-	vSM           =        vSMu / TT.sum(vSMu, axis=1, keepdims=1)
-	
-	######################  Output layer
-	oy           = vSM
-	
-	# Function creation
-	classf       = T.function(inputs=[ix], outputs=oy, name="classification-function")
-	
-	
-	
-	
-	#
-	# Training function construction.
-	#
-	
-	# Inputs also include iy.
-	iy = TT.tensor4("y") # (Batch=hB, #Classes=10, Height=1, Width=1)
-	
-	
-	######################  Regularization
-	L1decay      = TT.sum(TT.abs_(SV["pLaW"])) + TT.sum(TT.abs_(SV["pLcW"])) + TT.sum(TT.abs_(SV["pLeW"])) + \
-	               TT.sum(TT.abs_(SV["pLfW"])) + TT.sum(TT.abs_(SV["pLhW"])) + TT.sum(TT.abs_(SV["pLiW"])) + \
-	               TT.sum(TT.abs_(SV["pLjW"]))
-	L2decay      = TT.sum(SV["pLaW"]*SV["pLaW"]) + TT.sum(SV["pLcW"]*SV["pLcW"]) + TT.sum(SV["pLeW"]*SV["pLeW"]) + \
-	               TT.sum(SV["pLfW"]*SV["pLfW"]) + TT.sum(SV["pLhW"]*SV["pLhW"]) + TT.sum(SV["pLiW"]*SV["pLiW"]) + \
-	               TT.sum(SV["pLjW"]*SV["pLjW"])
-	
-	
-	######################  Cross-Entropy Loss
-	oceloss      = TT.sum(TT.mean(-iy*TT.log(oy), axis=0))           # Average across batch, sum over space.
-	oloss        = oceloss # + L2decay*SV["hL2P"] + L1decay*SV["hL1P"]
-	
-	
-	######################  Update rules & Gradients
-	updates = []
-	for (name, param) in SV.iteritems():
-		if(name.startswith("p")):
-			#
-			# It's a parameter, so we do SGD with momentum on it.
-			#
-			# To do this we get the gradient and construct a velocity shared variable.
-			#
-			
-			pgrad = T.grad(oloss, param)
-			pvel  = T.shared(np.zeros(param.get_value().shape, dtype=param.dtype),
-			                 name          = param.name+"vel",
-			                 broadcastable = param.broadcastable)
-			
-			# Momentum rule:
-			newpvel  = SV["hMom"]*pvel + (1.0-SV["hMom"])*pgrad
-			newparam = param - SV["hLrn"]*newpvel
-			
-			#Updates
-			updates.append((pvel,
-			                newpvel))
-			updates.append((param,
-			                newparam))
-	
-	
-	# Function creation
-	lossf  = T.function(inputs=[ix, iy], outputs=oloss, updates=updates, name="loss-function")
-	
-	
-	#TP.pydotprint(lossf, "graph.png", format="png", with_ids=False, compact=True)
-	return (classf, lossf)
 
 
 
@@ -760,186 +544,257 @@ def constructTheanoFuncs(SV):
 # KITNN Trainer class code.
 #
 
-class KITNNTrainer(object):
+class KITNNTrainer(Object):
 	#
-	# Construct a trainer object from arguments.
-	#
-	
-	def __init__(self, argv):
-		self.kEpoch = 0
-		
-		#
-		# IMPORTANT:
-		#
-		# The below is a critical part of the continuation-passing style used
-		# in train(). It's what allows finegrained resumable training.
-		#
-		
-		if False:
-			self.SETCC(None) #FIXME: Whatever we loaded from the save file!
-		else:
-			self.SETCC(self.ccStartEpoch);
-	
-	#
-	# IMPLEMENTATION OF CONTINUATION PASSING STYLE.
-	#
-	# Three functions implement our mini-CPS training environment.
-	#
-	# - Have continuation?
-	#
-	#     We have a continuation if self.cc is a tuple of length 4. If so:
-	#       - Its first element is a callable continuation function.
-	#       - Its second element is a tuple of arguments to be passed to the
-	#         continuation
-	#       - Its third element is a return value.
-	#       - Its fourth element is a continue Boolean flag that indicates
-	#         whether we're continuing, or returning from the trampoline.
-	#
-	# - Invoke continuation.
-	# - Set/Return continuation.
-	#
-	#     - If the "continue" flag is True, we are "returning" only the
-	#       continuation which the trampoline is expected to call.
-	#     - If the "continue" flag is False, we are truly returning a value an
-	#       breaking out of the trampoline.
-	#
-	# - Set continuation arguments.
-	#
-	#    Intended to be used by resuming code. Sets the current
-	#    continuation's arguments and sets the continue flag to True.
-	#    After a suspension of training, this allows a subsequent RUNCC() to
-	#    resume training.
-	#
-	# - Run continuation trampoline.
-	#
-	#     Runs the trampoline loop that implements our CPS style.
+	# Construct a trainer object from a session.
 	#
 	
-	def HAVECC(self):
-		return len     (self.cc   ) ==     4 and \
-		       callable(self.cc[0]) ==  True and \
-		       type    (self.cc[1]) == tuple and \
-		       type    (self.cc[3]) ==  bool and \
-			   self.cc[3]           ==  True
-	
-	def INVKCC(self):
-		if self.HAVECC():
-			self.cc[0](*self.cc[1])
-		return self.cc[2]
-	
-	def SETCC(self, fun, args=()):
-		assert callable(fun)
-		assert type(args)==tuple
-		self.cc = (fun, args, None, True)
-		return self.cc
-	
-	def RETCC(self, ret=None, fun=None, args=()):
-		if fun==None:
-			self.cc = (None, (), ret, False)
-		else:
-			assert callable(fun)
-			assert type(args)==tuple
-			
-			self.cc = (fun, args, ret, False)
-		return self.cc
-	
-	def SETCCARGS(self, args):
-		assert type(args)==tuple
-		self.cc[2] = args
-		self.cc[3] = True
-	
-	def RUNCC(self):
-		ret = None
-		try:
-			while self.HAVECC():
-				ret = self.INVKCC()
-		except KeyboardInterrupt as kbdie:
-			print("Stopped.")
-		finally:
-			return ret
+	def __init__(self, sess):
+		self.sess = sess
+		self.cc   = eval(KITNN_TRAIN_ENTRY_POINT)
+		self.kTB  = 25
+		self.kCB  = 100
+		self.train_ix = np.zeros((10000,10), dtype="float32")
+		self.valid_ix = np.zeros(( 2000,10), dtype="float32")
+		self.kitnn    = KITNN("")
 	
 	#
 	# Train a KITNN.
 	#
+	# This method assumes that the trainer object is fully initialized, and in
+	# particular that the present continuation is in self.cc.
+	#
 	
 	def train(self):
-		self.RUNCC()
+		try:
+			while callable(self.cc):
+				self.cc = self.cc(self)
+		except KeyboardInterrupt as kbdie:
+			print("\nStopped.")
+		finally:
+			return self.cc
 	
 	#
-	# Start an epoch
+	# Invoke a continuation, possibly snapshotting and printing to stdout as well.
 	#
 	
-	def ccStartEpoch(self):
-		self.ccDoTrainPass()
-		self.ccDoBNPass()
-		self.ccDoValidPass()
-		self.kEpoch += 1
+	def invoke(self, cc, snap=False, newLine=False, **kwargs):
+		#
+		# (Maybe) take a snapshot. We make a commitment to call cc, then
+		# immediately invoke it. There must be **NO** state-changing after this
+		# if and before the returning of the continuation.
+		#
 		
-		print self.kEpoch
-		
-		if self.kEpoch<10:
-			return self.SETCC(self.ccStartEpoch)
-		else:
-			return self.RETCC(None, self.ccStartEpoch)
-	
-	
-	#
-	# Do one pass over the training set.
-	#
-	
-	def ccDoTrainPass(self):
-		pass
-	
-	
-	#
-	# Learn Batch Normalization constants over training set.
-	#
-	
-	def ccDoBNPass(self):
-		pass
-	
-	
-	#
-	# Do one pass over the validation set.
-	#
-	
-	def ccDoValidPass(self):
-		pass
-	
-	
-	#
-	# Print status
-	#
-	
-	def setAndPrintState(self, newState=None, newLine=False, doPrint=True):
-		# Set current state to new state
-		if(newState != None):
-			self.state = newState
-		
-		# Print if told to
-		if(doPrint):
-			# Switch on current state.
-			if  (self.state == "a"):
-				sys.stdout.write()
-			elif(self.state == "b"):
-				sys.stdout.write()
-			elif(self.state == "c"):
-				sys.stdout.write()
-			elif(self.state == "d"):
-				sys.stdout.write()
-			elif(self.state == "e"):
-				sys.stdout.write()
-			elif(self.state == "f"):
-				sys.stdout.write()
-			
-			# Final newline, if wanted
-			if newLine:
-				sys.stdout.write("\n")
-			
-			# Flush
+		if callable(snap): snap=snap()
+		if(type(snap) == bool and snap):
+			sys.stdout.write("  Snapshot!\n")
 			sys.stdout.flush()
+		
+		return cc
+	
+	#
+	# Snapshot controllers.
+	#
+	
+	def shouldTTSnap(self):
+		return False
+	def shouldCTSnap(self):
+		return False
+	def shouldCVSnap(self):
+		return False
+	
+	#
+	# Logger.
+	#
+	
+	def log(self, logEntries):
+		pass
+	
+	#
+	# Construct Theano training function.
+	#
+	
+	def constructTrainF():
+		#
+		# Training function construction.
+		#
+		
+		# Inputs also include iy.
+		iy = TT.tensor4("y") # (Batch=hB, #Classes=10, Height=1, Width=1)
+		
+		
+		######################  Regularization
+		L1decay      = TT.sum(TT.abs_(SV["pLaW"])) + TT.sum(TT.abs_(SV["pLcW"])) + TT.sum(TT.abs_(SV["pLeW"])) + \
+		               TT.sum(TT.abs_(SV["pLfW"])) + TT.sum(TT.abs_(SV["pLhW"])) + TT.sum(TT.abs_(SV["pLiW"])) + \
+		               TT.sum(TT.abs_(SV["pLjW"]))
+		L2decay      = TT.sum(SV["pLaW"]*SV["pLaW"]) + TT.sum(SV["pLcW"]*SV["pLcW"]) + TT.sum(SV["pLeW"]*SV["pLeW"]) + \
+		               TT.sum(SV["pLfW"]*SV["pLfW"]) + TT.sum(SV["pLhW"]*SV["pLhW"]) + TT.sum(SV["pLiW"]*SV["pLiW"]) + \
+		               TT.sum(SV["pLjW"]*SV["pLjW"])
+		
+		
+		######################  Cross-Entropy Loss
+		oceloss      = TT.sum(TT.mean(-iy*TT.log(oy), axis=0))           # Average across batch, sum over space.
+		oloss        = oceloss # + L2decay*SV["hL2P"] + L1decay*SV["hL1P"]
+		
+		
+		######################  Update rules & Gradients
+		updates = []
+		for (name, param) in SV.iteritems():
+			if(name.startswith("p")):
+				#
+				# It's a parameter, so we do SGD with momentum on it.
+				#
+				# To do this we get the gradient and construct a velocity shared variable.
+				#
+				
+				pgrad = T.grad(oloss, param)
+				pvel  = T.shared(np.zeros(param.get_value().shape, dtype=param.dtype),
+				                 name          = param.name+"vel",
+				                 broadcastable = param.broadcastable)
+				
+				# Momentum rule:
+				newpvel  = SV["hMom"]*pvel + (1.0-SV["hMom"])*pgrad
+				newparam = param - SV["hLrn"]*newpvel
+				
+				#Updates
+				updates.append((pvel,
+				                newpvel))
+				updates.append((param,
+				                newparam))
+		
+		
+		# Function creation
+		lossf  = T.function(inputs=[ix, iy], outputs=oloss, updates=updates, name="loss-function")
+		
+		
+		#TP.pydotprint(lossf, "graph.png", format="png", with_ids=False, compact=True)
+		return (classf, lossf)
 
 
+###############################################################################
+# KITNN Trainer Training Loop Code.
+#
+
+def cps(f):
+	f.isCps = 1
+	return f
+@cps
+def KTPrologue(cc):
+	cc.mE = 0
+	return cc.invoke(KTEpochLoopStart)
+@cps
+def KTEpochLoopStart(cc):
+	#
+	# Epoch Loop CONDITION
+	#
+	if(True):
+		#
+		# Epoch Loop BODY
+		#
+		
+		# Progress indexes
+		cc.mTTI      = 0
+		cc.mCTI      = 0
+		cc.mCVI      = 0
+		cc.mCTErrCnt = 0
+		cc.mCVErrCnt = 0
+		
+		return cc.invoke(KTTrainOverTrainLoop)
+	else:
+		#
+		# Epoch Loop EPILOGUE
+		#
+		
+		#UNREACHABLE
+		pass
+@cps
+def KTTrainOverTrainLoop(cc):
+	#
+	# Train-over-Train Loop CONDITION
+	#
+	if((cc.mTTI + cc.kTB) <= len(cc.train_ix)):
+		#
+		# Train-over-Train Loop BODY
+		#
+		
+		#cc.uploadTrainData(cc.mTTI, cc.kTB)
+		loss = 0#cc.invokeTrainF()
+		sys.stdout.write("TT ")
+		sys.stdout.flush()
+		
+		cc.mTTI += cc.kTB
+		cc.log({"trainLoss":float(loss)})
+		return cc.invoke(KTTrainOverTrainLoop, snap=cc.shouldTTSnap)
+	else:
+		#
+		# Train-over-Train Loop EPILOGUE
+		#
+		return cc.invoke(KTCheckOverTrainLoop, snap=True)
+@cps
+def KTCheckOverTrainLoop(cc):
+	#
+	# Check-over-Train Loop CONDITION
+	#
+	if(cc.mCTI + cc.kCB <= len(cc.train_ix)):
+		#
+		# Check-over-Train Loop BODY
+		#
+		
+		#cc.uploadTrainData(cc.mCTI, cc.kCB)
+		#yEst = cc.invokeClassF()
+		
+		cc.mCTI      += cc.kCB
+		#cc.mCTErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+		
+		sys.stdout.write("CT ")
+		sys.stdout.flush()
+		
+		return cc.invoke(KTCheckOverTrainLoop, snap=cc.shouldCTSnap)
+	else:
+		#
+		# Check-over-Train Loop EPILOGUE
+		#
+		cc.log({"trainErr":float(cc.mCTErrCnt)/cc.mCTI})
+		return cc.invoke(KTCheckOverValidLoop, snap=True)
+@cps
+def KTCheckOverValidLoop(cc):
+	#
+	# Check-over-Valid Loop CONDITION
+	#
+	if(cc.mCVI + cc.kCB <= len(cc.valid_ix)):
+		#
+		# Check-over-Valid Loop BODY
+		#
+		
+		#cc.uploadTrainData(cc.mCVI, cc.kCB)
+		#yEst = cc.invokeClassF()
+		
+		cc.mCVI      += cc.kCB
+		#cc.mCVErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+		
+		sys.stdout.write("CV ")
+		sys.stdout.flush()
+		
+		return cc.invoke(KTCheckOverValidLoop, snap=cc.shouldCVSnap)
+	else:
+		#
+		# Check-over-Valid Loop EPILOGUE
+		#
+		cc.log({"validErr":float(cc.mCVErrCnt)/cc.mCVI})
+		sys.stdout.write("\n")
+		sys.stdout.flush()
+		return cc.invoke(KTEpochLoopEnd, snap=False)
+@cps
+def KTEpochLoopEnd(cc):
+	# Save if best model so far.
+	#cc.saveIfBestSoFar()
+	
+	#Increment epoch number
+	cc.mE += 1
+	if(cc.mE >= 10):
+		return 0
+	
+	return cc.invoke(KTEpochLoopStart, snap=True, newLine=True)
 
 
 
@@ -947,13 +802,13 @@ class KITNNTrainer(object):
 # KITNN Class code.
 #
 
-class KITNN(object):
+class KITNN(Object):
 	#
 	# Construct a KITNN object.
 	#
 	
 	def __init__(self, sess):
-		pass
+		self.theanoSetup()
 	
 	#
 	# Load oneself from an HDF5 group.
@@ -994,6 +849,148 @@ class KITNN(object):
 	
 	def update(self, **kwargs):
 		pass
+	
+	#
+	# Theano setup.
+	#
+	
+	def theanoSetup(self):
+		self.T = Object()
+		self.constructTheanoSVs()
+		self.constructTheanoClassF()
+	
+	#
+	# Construct Theano shared variables.
+	#
+	
+	def constructTheanoSVs(self):
+		for (name, desc) in PARAMS_DICT.iteritems():
+			value         = np.empty(desc["shape"], desc["dtype"])
+			broadcastable = desc["broadcast"]
+			setattr(self.T, name, T.shared(value=value, name=name, broadcastable=broadcastable))
+	
+	#
+	# Construct Theano classification function.
+	#
+	
+	def constructTheanoClassF(self):
+		# Input is ix.
+		self.T.ix = TT.tensor4("x", dtype="float32") # (Batch=hB, #Channels=3, Height=192, Width=192)
+		
+		
+		##########################################################
+		# The math.                                              #
+		##########################################################
+		
+		######################  Input layer
+		self.T.vIn           = self.T.ix
+		
+		######################  conv1   XXXXXX
+		self.T.vConv1In      = self.T.vIn
+		self.T.vConv1Act     = TTN .conv2d     (self.T.vConv1In,     self.T.pConv1W,     None, None, "half", (2,2)) + self.T.pConv1B
+		self.T.vConv1        = TTN .relu       (self.T.vConv1Act)
+		
+		######################  maxpool1
+		self.T.vMaxpool1     = TTSP.pool_2d    (self.T.vConv1, (3,3), True, (2,2), (1,1), "max")
+		
+		######################  fire2
+		self.T.vFire2CompAct = TTN .conv2d     (self.T.vMaxpool1,    self.T.pFire2CompW, None, None, "half", (1,1)) + self.T.pFire2CompB
+		self.T.vFire2Comp    = TTN .relu       (self.T.vFire2CompAct)
+		self.T.vFire2Exp1Act = TTN .conv2d     (self.T.vFire2Comp,   self.T.pFire2Exp1W, None, None, "half", (1,1)) + self.T.pFire2Exp1B
+		self.T.vFire2Exp1    = TTN .relu       (self.T.vFire2Exp1Act)
+		self.T.vFire2Exp3Act = TTN .conv2d     (self.T.vFire2Comp,   self.T.pFire2Exp3W, None, None, "half", (1,1)) + self.T.pFire2Exp3B
+		self.T.vFire2Exp3    = TTN .relu       (self.T.vFire2Exp3Act)
+		self.T.vFire2        = TT  .concatenate([self.T.vFire2Exp1,  self.T.vFire2Exp3], axis=1);
+		
+		######################  fire3
+		self.T.vFire3CompAct = TTN .conv2d     (self.T.vFire2,       self.T.pFire3CompW, None, None, "half", (1,1)) + self.T.pFire3CompB
+		self.T.vFire3Comp    = TTN .relu       (self.T.vFire3CompAct)
+		self.T.vFire3Exp1Act = TTN .conv2d     (self.T.vFire3Comp,   self.T.pFire3Exp1W, None, None, "half", (1,1)) + self.T.pFire3Exp1B
+		self.T.vFire3Exp1    = TTN .relu       (self.T.vFire3Exp1Act)
+		self.T.vFire3Exp3Act = TTN .conv2d     (self.T.vFire3Comp,   self.T.pFire3Exp3W, None, None, "half", (1,1)) + self.T.pFire3Exp3B
+		self.T.vFire3Exp3    = TTN .relu       (self.T.vFire3Exp3Act)
+		self.T.vFire3        = TT  .concatenate([self.T.vFire3Exp1,  self.T.vFire3Exp3], axis=1);
+		
+		######################  fire4
+		self.T.vFire4CompAct = TTN .conv2d     (self.T.vFire3,       self.T.pFire4CompW, None, None, "half", (1,1)) + self.T.pFire4CompB
+		self.T.vFire4Comp    = TTN .relu       (self.T.vFire4CompAct)
+		self.T.vFire4Exp1Act = TTN .conv2d     (self.T.vFire4Comp,   self.T.pFire4Exp1W, None, None, "half", (1,1)) + self.T.pFire4Exp1B
+		self.T.vFire4Exp1    = TTN .relu       (self.T.vFire4Exp1Act)
+		self.T.vFire4Exp3Act = TTN .conv2d     (self.T.vFire4Comp,   self.T.pFire4Exp3W, None, None, "half", (1,1)) + self.T.pFire4Exp3B
+		self.T.vFire4Exp3    = TTN .relu       (self.T.vFire4Exp3Act)
+		self.T.vFire4        = TT  .concatenate([self.T.vFire4Exp1,  self.T.vFire4Exp3], axis=1);
+		
+		######################  maxpool4
+		self.T.vMaxpool4     = TTSP.pool_2d    (self.T.vFire4, (3,3), True, (2,2), (1,1), "max")
+		
+		######################  fire5
+		self.T.vFire5CompAct = TTN .conv2d     (self.T.vMaxpool4,    self.T.pFire5CompW, None, None, "half", (1,1)) + self.T.pFire5CompB
+		self.T.vFire5Comp    = TTN .relu       (self.T.vFire5CompAct)
+		self.T.vFire5Exp1Act = TTN .conv2d     (self.T.vFire5Comp,   self.T.pFire5Exp1W, None, None, "half", (1,1)) + self.T.pFire5Exp1B
+		self.T.vFire5Exp1    = TTN .relu       (self.T.vFire5Exp1Act)
+		self.T.vFire5Exp3Act = TTN .conv2d     (self.T.vFire5Comp,   self.T.pFire5Exp3W, None, None, "half", (1,1)) + self.T.pFire5Exp3B
+		self.T.vFire5Exp3    = TTN .relu       (self.T.vFire5Exp3Act)
+		self.T.vFire5        = TT  .concatenate([self.T.vFire5Exp1,  self.T.vFire5Exp3], axis=1);
+		
+		######################  fire6
+		self.T.vFire6CompAct = TTN .conv2d     (self.T.vFire5,       self.T.pFire6CompW, None, None, "half", (1,1)) + self.T.pFire6CompB
+		self.T.vFire6Comp    = TTN .relu       (self.T.vFire6CompAct)
+		self.T.vFire6Exp1Act = TTN .conv2d     (self.T.vFire6Comp,   self.T.pFire6Exp1W, None, None, "half", (1,1)) + self.T.pFire6Exp1B
+		self.T.vFire6Exp1    = TTN .relu       (self.T.vFire6Exp1Act)
+		self.T.vFire6Exp3Act = TTN .conv2d     (self.T.vFire6Comp,   self.T.pFire6Exp3W, None, None, "half", (1,1)) + self.T.pFire6Exp3B
+		self.T.vFire6Exp3    = TTN .relu       (self.T.vFire6Exp3Act)
+		self.T.vFire6        = TT  .concatenate([self.T.vFire6Exp1,  self.T.vFire6Exp3], axis=1);
+		
+		######################  fire7
+		self.T.vFire7CompAct = TTN .conv2d     (self.T.vFire6,       self.T.pFire7CompW, None, None, "half", (1,1)) + self.T.pFire7CompB
+		self.T.vFire7Comp    = TTN .relu       (self.T.vFire7CompAct)
+		self.T.vFire7Exp1Act = TTN .conv2d     (self.T.vFire7Comp,   self.T.pFire7Exp1W, None, None, "half", (1,1)) + self.T.pFire7Exp1B
+		self.T.vFire7Exp1    = TTN .relu       (self.T.vFire7Exp1Act)
+		self.T.vFire7Exp3Act = TTN .conv2d     (self.T.vFire7Comp,   self.T.pFire7Exp3W, None, None, "half", (1,1)) + self.T.pFire7Exp3B
+		self.T.vFire7Exp3    = TTN .relu       (self.T.vFire7Exp3Act)
+		self.T.vFire7        = TT  .concatenate([self.T.vFire7Exp1,  self.T.vFire7Exp3], axis=1);
+		
+		######################  fire8
+		self.T.vFire8CompAct = TTN .conv2d     (self.T.vFire7,       self.T.pFire8CompW, None, None, "half", (1,1)) + self.T.pFire8CompB
+		self.T.vFire8Comp    = TTN .relu       (self.T.vFire8CompAct)
+		self.T.vFire8Exp1Act = TTN .conv2d     (self.T.vFire8Comp,   self.T.pFire8Exp1W, None, None, "half", (1,1)) + self.T.pFire8Exp1B
+		self.T.vFire8Exp1    = TTN .relu       (self.T.vFire8Exp1Act)
+		self.T.vFire8Exp3Act = TTN .conv2d     (self.T.vFire8Comp,   self.T.pFire8Exp3W, None, None, "half", (1,1)) + self.T.pFire8Exp3B
+		self.T.vFire8Exp3    = TTN .relu       (self.T.vFire8Exp3Act)
+		self.T.vFire8        = TT  .concatenate([self.T.vFire8Exp1,  self.T.vFire8Exp3], axis=1);
+		
+		######################  maxpool8
+		self.T.vMaxpool8     = TTSP.pool_2d    (self.T.vFire8, (3,3), True, (2,2), (1,1), "max")
+		
+		######################  fire9
+		self.T.vFire9CompAct = TTN .conv2d     (self.T.vMaxpool8,    self.T.pFire9CompW, None, None, "half", (1,1)) + self.T.pFire9CompB
+		self.T.vFire9Comp    = TTN .relu       (self.T.vFire9CompAct)
+		self.T.vFire9Exp1Act = TTN .conv2d     (self.T.vFire9Comp,   self.T.pFire9Exp1W, None, None, "half", (1,1)) + self.T.pFire9Exp1B
+		self.T.vFire9Exp1    = TTN .relu       (self.T.vFire9Exp1Act)
+		self.T.vFire9Exp3Act = TTN .conv2d     (self.T.vFire9Comp,   self.T.pFire9Exp3W, None, None, "half", (1,1)) + self.T.pFire9Exp3B
+		self.T.vFire9Exp3    = TTN .relu       (self.T.vFire9Exp3Act)
+		self.T.vFire9        = TT  .concatenate([self.T.vFire9Exp1,  self.T.vFire9Exp3], axis=1);
+		
+		######################  conv10
+		self.T.vConv10Act    = TTN .conv2d     (self.T.vFire9,       self.T.pConv10W,    None, None, "half", (1,1)) + self.T.pConv10B
+		self.T.vConv10       = TTN .relu       (self.T.vConv10Act)
+		
+		######################  avgpool10
+		self.T.vAvgpool10    = TTSP.pool_2d    (self.T.vConv10, (12,12), True, (1,1), (0,0), "average_exc_pad")
+		
+		######################  Softmax
+		self.T.vSMi          = self.T.vAvgpool10
+		self.T.vSMu          = TT.exp(self.T.vSMi - TT.max(self.T.vSMi, axis=1, keepdims=1))
+		self.T.vSM           =        self.T.vSMu / TT.sum(self.T.vSMu, axis=1, keepdims=1)
+		
+		######################  Output layer
+		self.T.oy           = self.T.vSM
+		
+		# Function creation
+		self.T.classf       = T.function(inputs=[self.T.ix], outputs=[self.T.oy], name="classification-function")
+		
+		# Return
+		return self.T.classf
 
 
 
@@ -1054,11 +1051,14 @@ def verb_extractCode(argv):
 #
 
 def verb_train(argv=None):
-	kitnntrainer = KITNNTrainer(argv)
-	if(kitnntrainer == None):
-		exit(1)
+	kitnnTrainer = KITNNTrainer(argv)
+	#kitnnTrainer.train()
 	
-	kitnntrainer.train()
+	while True:
+		ts = time.time()
+		s = kitnnTrainer.kitnn.T.classf(np.zeros((64,3,192,192), dtype="float32"))[0].shape
+		te = time.time()
+		print s, te-ts, "s"
 	
 	#pdb.set_trace()
 
@@ -1070,7 +1070,8 @@ def verb_train(argv=None):
 #
 
 def verb_screw(argv=None):
-	f = KFOpen(argv[2])
+	f = H.File(argv[2], "a")           # Create file
+	f = KFOpen(f)
 	KFPruneInconsistentSessions(f)
 	s = KFCreateConsistentSession(f)
 
