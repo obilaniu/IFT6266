@@ -67,7 +67,7 @@ import time
 # PATH ---------------------------------| TYPE --------------| DESCRIPTION ----
 #
 # /                                                            Root.
-#   sessions/                                                  Sessions folder.
+#   sess/                                                      Sessions folder.
 #     1/                                                       Session 1 folder.
 #       meta/                                                  Metadata folder.
 #         initPRNG/                                            Initialization-time MERSENNE TWISTER PRNG state
@@ -80,10 +80,10 @@ import time
 #         argv                            str[]                Arguments as of invocation time.
 #         unixTimeStarted                 float64              Invocation time.
 #         consistent                      uint64               Is session consistent (all components of "filesystem" created and initialized sanely)?
-#       snapshot/                                              Snapshots.
+#       snap/                                                  Snapshots.
 #         atomic                          uint64               Atomic toggle indicating if snapshot 0/ or 1/ is the current state.
 #         0/                                                   Snapshot 0.
-#           currKITNN/                                         Current KITNN.
+#           curr/                                              Current KITNN.
 #             data/                                            Training 
 #               parameters/                                    Parameters.
 #                 <paramHierarchy>        T                    *** MODEL-DEPENDENT ***
@@ -107,7 +107,7 @@ import time
 #               trainLoss                 float64[*]           Logging of training loss (NLL).
 #               trainErr                  float64[*]           Logging of training error %.
 #               validErr                  float64[*]           Logging of validation error %.
-#           bestKITNN/                                         Best KITNN so far.
+#           best/                                              Best KITNN so far.
 #             ...                                              Same as currKITNN/
 #         1/                                                   Snapshot 1.
 #           ...                                                Same as 0/
@@ -194,76 +194,6 @@ import time
 H5PY_VLEN_STR = H.special_dtype(vlen=str)
 
 
-###############################################################################
-# SqueezeNet configuration
-#
-
-conv1  =  48;
-f2_s1  =  16; f2_e1 =  32; f2_e3 =  32; f2_e = f2_e1 + f2_e3;
-f3_s1  =  16; f3_e1 =  32; f3_e3 =  32; f3_e = f3_e1 + f3_e3;
-f4_s1  =  32; f4_e1 =  64; f4_e3 =  64; f4_e = f4_e1 + f4_e3;
-f5_s1  =  32; f5_e1 =  64; f5_e3 =  64; f5_e = f5_e1 + f5_e3;
-f6_s1  =  48; f6_e1 =  96; f6_e3 =  96; f6_e = f6_e1 + f6_e3;
-f7_s1  =  48; f7_e1 =  96; f7_e3 =  96; f7_e = f7_e1 + f7_e3;
-f8_s1  =  64; f8_e1 = 128; f8_e3 = 128; f8_e = f8_e1 + f8_e3;
-f9_s1  =  64; f9_e1 = 128; f9_e3 = 128; f9_e = f9_e1 + f9_e3;
-conv10 =   2;
-
-PARAMS_DICT = {
-	"pConv1W"     : {"dtype": "float32", "shape": ( conv1,      3,  7,  7), "broadcast": (False, False, False, False), "isBias": False},
-	"pConv1B"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire2CompW" : {"dtype": "float32", "shape": ( f2_s1,  conv1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire2CompB" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire2Exp1W" : {"dtype": "float32", "shape": ( f2_e1,  f2_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire2Exp1B" : {"dtype": "float32", "shape": (     1,  f2_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire2Exp3W" : {"dtype": "float32", "shape": ( f2_e3,  f2_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire2Exp3B" : {"dtype": "float32", "shape": (     1,  f2_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire3CompW" : {"dtype": "float32", "shape": ( f3_s1,  f2_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire3CompB" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire3Exp1W" : {"dtype": "float32", "shape": ( f3_e1,  f3_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire3Exp1B" : {"dtype": "float32", "shape": (     1,  f3_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire3Exp3W" : {"dtype": "float32", "shape": ( f3_e3,  f3_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire3Exp3B" : {"dtype": "float32", "shape": (     1,  f3_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire4CompW" : {"dtype": "float32", "shape": ( f4_s1,  f3_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire4CompB" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire4Exp1W" : {"dtype": "float32", "shape": ( f4_e1,  f4_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire4Exp1B" : {"dtype": "float32", "shape": (     1,  f4_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire4Exp3W" : {"dtype": "float32", "shape": ( f4_e3,  f4_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire4Exp3B" : {"dtype": "float32", "shape": (     1,  f4_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire5CompW" : {"dtype": "float32", "shape": ( f5_s1,  f4_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire5CompB" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire5Exp1W" : {"dtype": "float32", "shape": ( f5_e1,  f5_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire5Exp1B" : {"dtype": "float32", "shape": (     1,  f5_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire5Exp3W" : {"dtype": "float32", "shape": ( f5_e3,  f5_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire5Exp3B" : {"dtype": "float32", "shape": (     1,  f5_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire6CompW" : {"dtype": "float32", "shape": ( f6_s1,  f5_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire6CompB" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire6Exp1W" : {"dtype": "float32", "shape": ( f6_e1,  f6_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire6Exp1B" : {"dtype": "float32", "shape": (     1,  f6_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire6Exp3W" : {"dtype": "float32", "shape": ( f6_e3,  f6_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire6Exp3B" : {"dtype": "float32", "shape": (     1,  f6_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire7CompW" : {"dtype": "float32", "shape": ( f7_s1,  f6_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire7CompB" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire7Exp1W" : {"dtype": "float32", "shape": ( f7_e1,  f7_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire7Exp1B" : {"dtype": "float32", "shape": (     1,  f7_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire7Exp3W" : {"dtype": "float32", "shape": ( f7_e3,  f7_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire7Exp3B" : {"dtype": "float32", "shape": (     1,  f7_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire8CompW" : {"dtype": "float32", "shape": ( f8_s1,  f7_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire8CompB" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire8Exp1W" : {"dtype": "float32", "shape": ( f8_e1,  f8_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire8Exp1B" : {"dtype": "float32", "shape": (     1,  f8_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire8Exp3W" : {"dtype": "float32", "shape": ( f8_e3,  f8_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire8Exp3B" : {"dtype": "float32", "shape": (     1,  f8_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire9CompW" : {"dtype": "float32", "shape": ( f9_s1,  f8_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire9CompB" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire9Exp1W" : {"dtype": "float32", "shape": ( f9_e1,  f9_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire9Exp1B" : {"dtype": "float32", "shape": (     1,  f9_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pFire9Exp3W" : {"dtype": "float32", "shape": ( f9_e3,  f9_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-	"pFire9Exp3B" : {"dtype": "float32", "shape": (     1,  f9_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-	"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-	"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True }}
-
-
 
 ###############################################################################
 # Dummy object class
@@ -275,23 +205,6 @@ class Object(object): pass
 ###############################################################################
 # Utilities
 #
-
-#
-# Tensor padding.
-#
-
-def zpadT(x, padding=(1,1,1,1)):
-	u     = padding[0]
-	d     = padding[1]
-	l     = padding[2]
-	r     = padding[3]
-	shape = (x.shape[0],
-	         x.shape[1],
-	         x.shape[2]+u+d,
-	         x.shape[3]+l+r)
-	xpad  = TT.zeros(shape, x.dtype)
-	TT.set_subtensor(xpad[:,:,u:-d,l:-r], x)
-	return xpad
 
 
 ###############################################################################
@@ -308,19 +221,29 @@ KITNN_TRAIN_ENTRY_POINT = "KTPrologue"
 # Open a KITNN file.
 #
 
-def KFOpen(f):
-	f.require_group("/sessions")        # Ensure a sessions group exists
+def KFOpen(f, mode="r"):
+	if type(f)==str:
+		f = H.File(f, mode=mode)
+	f.require_group("/sess")        # Ensure a sess/ group exists
 	return f
+
+#
+# Flush changes made to a file, group or dataset to disk.
+#
+
+def KFFlush(h5pyFileOrGroupOrDataset):
+	h5pyFileOrGroupOrDataset.file.flush()
 
 #
 # Prune inconsistent sessions from a file.
 #
 
 def KFPruneInconsistentSessions(f):
-	for d in f["/sessions"].keys():
-		if f.get("/sessions/"+d+"/meta/consistent", 0)[()] == 0:
+	for d in f["/sess"].keys():
+		if f.get("/sess/"+d+"/meta/consistent", 0)[()] == 0:
 			print("Prunning inconsistent session \""+d+"\" ...")
-			del f["/sessions/"+d]
+			del f["/sess/"+d]
+	KFFlush(f)
 
 #
 # Create a consistent session in a file and return it.
@@ -331,41 +254,36 @@ def KFPruneInconsistentSessions(f):
 #
 
 def KFCreateConsistentSession(f, **kwargs):
-	sessions = sorted(f["/sessions"].keys(), key=int)
+	sessions = sorted(f["/sess"].keys(), key=int)
 	
 	if len(sessions) == 0:
 		n = 1
 		
 		oldSess = None
-		newSess = f.require_group("/sessions/"+str(n))
+		newSess = f.require_group("/sess/"+str(n))
 	else:
 		o = sessions[-1]
 		n = str(int(o)+1)
 		
-		oldSess = f.require_group("/sessions/"+str(o))
-		newSess = f.require_group("/sessions/"+str(n))
-		
-	return KSInitSession(newSess, oldSess, **kwargs)
+		oldSess = f.require_group("/sess/"+str(o))
+		newSess = f.require_group("/sess/"+str(n))
+	
+	newSess = KSInitSession(newSess, oldSess, **kwargs)
+	KFFlush(newSess)
+	return newSess
 
 #
 # Get last consistent session.
 #
 
 def KFGetLastConsistentSession(f, **kwargs):
-	sessions = sorted(f["/sessions"].keys(), key=int)
+	sessions = sorted(f["/sess"].keys(), key=int)
 	
-	for s in sessions:
-		if f.get("/sessions/"+s+"/meta/consistent", 0)[()] == 1:
-			return f["/sessions/"+s]
+	for s in sessions[::-1]:
+		if f.get("/sess/"+s+"/meta/consistent", 0)[()] == 1:
+			return f["/sess/"+s]
 	
 	return None
-
-#
-# Flush changes made to a file, group or dataset to disk.
-#
-
-def KFFlush(h5pyFileOrGroupOrDataset):
-	h5pyFileOrGroupOrDataset.file.flush()
 
 #
 # Delete unconditionally a path from the file, whether or not it previously
@@ -394,16 +312,19 @@ def KSInitSession(newSess, oldSess, **kwargs):
 	                        "meta/src.tar.gz",
 	                        "meta/argv",
 	                        "meta/unixTimeStarted",
+	                        "meta/theanoVersion",
 	                        "meta/consistent"])
 	
 	initPRNG        = np.random.get_state()
 	tarGzSrc        = KFSrcTarGz()
 	unixTimeStarted = np.full((), time.time(), dtype="float64")
 	consistent      = np.full((), 0, dtype="uint64")
+	theanoVersion   = T.version.full_version
 	
 	KDWritePRNG(newSess.require_group("meta/initPRNG"), data=initPRNG)
 	newSess.create_dataset("meta/src.tar.gz",           data=tarGzSrc)
 	newSess.create_dataset("meta/argv",                 data=sys.argv, dtype=H5PY_VLEN_STR)
+	newSess.create_dataset("meta/theanoVersion",        data=theanoVersion, dtype=H5PY_VLEN_STR)
 	newSess.create_dataset("meta/unixTimeStarted",      data=unixTimeStarted)
 	newSess.create_dataset("meta/consistent",           data=consistent)
 	
@@ -415,16 +336,16 @@ def KSInitSession(newSess, oldSess, **kwargs):
 		# atomic flag.
 		#
 		
-		KSInitSnapshotRandom(newSess.require_group("snapshot/0"), **kwargs)
-		newSess.copy("snapshot/0", "snapshot/1")
-		newSess.create_dataset("snapshot/atomic", data=np.full((), 0, dtype="uint64"))
+		KSnapshotInitRandom(newSess.require_group("snap/0"), **kwargs)
+		newSess.copy("snap/0", "snap/1")
+		newSess.create_dataset("snap/atomic", data=np.full((), 0, dtype="uint64"))
 	else:
 		#
 		# If a session does exist then just copy over the snapshots but not the metadata.
 		#
 		
 		assert(oldSess.get("meta/consistent", 0)[()] == 1)
-		oldSess.copy("snapshot", newSess)                 # Copy oldSess/shapshot to newSess/snapshot
+		oldSess.copy("snap", newSess)                      # Copy oldSess/snap to newSess/snap
 	
 	# Mark as consistent.
 	KFFlush(newSess)
@@ -486,53 +407,63 @@ def KFSrcTarGz():
 # Initialize a snapshot with random weights.
 #
 
-def KSInitSnapshotRandom(snap, **kwargs):
+def KSnapshotInitRandom(snap, **kwargs):
 	# currKITNN/data folder.
-	for (name, desc) in PARAMS_DICT.iteritems():
-		dtype     = desc["dtype"]
-		shape     = desc["shape"]
-		braodcast = desc["broadcast"]
-		isBias    = desc["isBias"]
-		
+	inits = KITNN.getParamRandomInits()
+	for (name, value) in inits.iteritems():
 		# parameters/ subfolder.
-		if isBias:
-			value  = np.zeros(shape, dtype)
-		else:
-			gain   = np.sqrt(2)
-			stddev = gain * np.sqrt(2.0 / np.sum(shape[0:2]))
-			value  = np.random.normal(scale=stddev, size=shape)
-		snap.require_dataset("currKITNN/data/parameters/"+name, shape, dtype, exact=True)[...] = value
-		
+		snap.require_dataset("curr/data/parameters/"+name, value.shape, value.dtype, exact=True)[...] = value
 		# velocities subfolder.
-		snap.require_dataset("currKITNN/data/velocities/"+name, shape, dtype, exact=True)[...] = np.zeros_like(value)
+		snap.require_dataset("curr/data/velocities/"+name, value.shape, value.dtype, exact=True)[...] = np.zeros_like(value)
 	
 	# currKITNN/log folder
-	KFDeletePaths(snap, ["currKITNN/log/trainLoss",
-	                     "currKITNN/log/trainErr",
-	                     "currKITNN/log/validErr"])
-	snap.require_dataset("currKITNN/log/trainLoss", (0,), "float64", maxshape=(None,))
-	snap.require_dataset("currKITNN/log/trainErr",  (0,), "float64", maxshape=(None,))
-	snap.require_dataset("currKITNN/log/validErr",  (0,), "float64", maxshape=(None,))
+	KFDeletePaths(snap, ["curr/log/trainLoss",
+	                     "curr/log/trainErr",
+	                     "curr/log/validErr"])
+	snap.require_dataset("curr/log/trainLoss", (0,), "float64", maxshape=(None,))
+	snap.require_dataset("curr/log/trainErr",  (0,), "float64", maxshape=(None,))
+	snap.require_dataset("curr/log/validErr",  (0,), "float64", maxshape=(None,))
 	
 	# currKITNN/misc folder.
-	snap.require_dataset("currKITNN/misc/mC",        (), H5PY_VLEN_STR, exact=True)[...] = KITNN_TRAIN_ENTRY_POINT
-	snap.require_dataset("currKITNN/misc/mE",        (), "uint64", exact=True)[...]      = 0
-	snap.require_dataset("currKITNN/misc/mTTI",      (), "uint64", exact=True)[...]      = 0
-	snap.require_dataset("currKITNN/misc/mCTI",      (), "uint64", exact=True)[...]      = 0
-	snap.require_dataset("currKITNN/misc/mCVI",      (), "uint64", exact=True)[...]      = 0
-	snap.require_dataset("currKITNN/misc/mCTErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
-	snap.require_dataset("currKITNN/misc/mCVErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
+	snap.require_dataset("curr/misc/mC",        (), H5PY_VLEN_STR, exact=True)[...] = KITNN_TRAIN_ENTRY_POINT
+	snap.require_dataset("curr/misc/mE",        (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("curr/misc/mTTI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("curr/misc/mCTI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("curr/misc/mCVI",      (), "uint64", exact=True)[...]      = 0
+	snap.require_dataset("curr/misc/mCTErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
+	snap.require_dataset("curr/misc/mCVErrCnt", (), "uint64", exact=True)[...]      = 0xFFFFFFFFFFFFFFFF
 	
 	# We do PRNG before-last.
-	KDWritePRNG(snap.require_group("currKITNN/misc/PRNG"), np.random.get_state())
+	KDWritePRNG(snap.require_group("curr/misc/PRNG"), np.random.get_state())
 	
 	# Lastly, we copy currKITNN to bestKITNN.
-	snap.copy("currKITNN", "bestKITNN")
+	snap.copy("curr", "best")
 	
 	# Return
 	return snap
 
+#
+# Get current snapshot in this session.
+#
 
+def KSGetAtomicSnapshotNum(sess):
+	return sess["snap/atomic"][()]
+
+#
+# Toggle atomic snapshot number, thus making another snapshot the current one.
+#
+
+def KSToggleAtomicSnapshotNum(sess, newNum=None):
+	KFFlush(sess)
+	num = KSGetAtomicSnapshotNum(sess)
+	
+	if newNum != None:
+		newNum = int(newNum)
+	else:
+		newNum = num ^ 1
+	
+	sess["snap/atomic"][()] = newNum
+	KFFlush(sess)
 
 
 
@@ -549,14 +480,64 @@ class KITNNTrainer(Object):
 	# Construct a trainer object from a session.
 	#
 	
-	def __init__(self, sess):
-		self.sess = sess
-		self.cc   = eval(KITNN_TRAIN_ENTRY_POINT)
-		self.kTB  = 25
-		self.kCB  = 100
+	def __init__(self, sess, model="curr"):
+		# A session *must* be provided.
+		if sess==None:
+			raise ValueError("Session cannot be none!")
+		
+		# Initialize a few objects and constants to default values.
+		self.T             = Object()
+		self.kTB           = 50
+		self.kCB           = 500
+		
+		# Initialize the mutable state of the trainer.
+		self.mC            = eval(KITNN_TRAIN_ENTRY_POINT)
+		self.mE            = 0
+		self.mTTI          = 0
+		self.mCTI          = 0
+		self.mCVI          = 0
+		self.mCTErrCnt     = 0
+		self.mCVErrCnt     = 0
+		self.logTrainLoss  = []
+		self.logTrainErr   = []
+		self.logValidErr   = []
+		
+		
+		# Load parameters
+		self.sess          = sess
+		self.T.kitnn       = KITNN()
+		self.load(self.sess, model)
+		
 		self.train_ix = np.zeros((10000,10), dtype="float32")
 		self.valid_ix = np.zeros(( 2000,10), dtype="float32")
-		self.kitnn    = KITNN("")
+	
+	#
+	# Load parameters from the "current" snapshot.
+	# By default, load from the "best" model rather than the "curr" model.
+	#
+	
+	def load(self, sess, model="best"):
+		# Argument sanity checks
+		if sess == None:
+			raise ValueError("Must provide a session to load from!")
+		if model != "best" and model != "curr":
+			raise ValueError("Chosen model must be either \"best\" (default) or \"curr\"!")
+		
+		
+	
+	#
+	# Save parameters to the "next" snapshot.
+	# By default, save to the "curr" model rather than the "best" model.
+	#
+	
+	def save(self, sess, model="curr"):
+		# Argument sanity checks
+		if sess == None:
+			raise ValueError("Must provide a session to load from!")
+		if model != "best" and model != "curr":
+			raise ValueError("Chosen model must be either \"best\" (default) or \"curr\"!")
+		
+		
 	
 	#
 	# Train a KITNN.
@@ -668,7 +649,7 @@ class KITNNTrainer(Object):
 		
 		
 		#TP.pydotprint(lossf, "graph.png", format="png", with_ids=False, compact=True)
-		return (classf, lossf)
+		return lossf
 
 
 ###############################################################################
@@ -803,30 +784,155 @@ def KTEpochLoopEnd(cc):
 #
 
 class KITNN(Object):
+	###############################################################################
+	# SqueezeNet configuration and parameter dictionary.
+	#
+	# "name" : {"dtype": "flaot32", "shape": (,,,), "broadcast": (,,,), "isBias":bool}
+	#
+	
+	conv1  =  48;
+	f2_s1  =  16; f2_e1 =  32; f2_e3 =  32; f2_e = f2_e1 + f2_e3;
+	f3_s1  =  16; f3_e1 =  32; f3_e3 =  32; f3_e = f3_e1 + f3_e3;
+	f4_s1  =  32; f4_e1 =  64; f4_e3 =  64; f4_e = f4_e1 + f4_e3;
+	f5_s1  =  32; f5_e1 =  64; f5_e3 =  64; f5_e = f5_e1 + f5_e3;
+	f6_s1  =  48; f6_e1 =  96; f6_e3 =  96; f6_e = f6_e1 + f6_e3;
+	f7_s1  =  48; f7_e1 =  96; f7_e3 =  96; f7_e = f7_e1 + f7_e3;
+	f8_s1  =  64; f8_e1 = 128; f8_e3 = 128; f8_e = f8_e1 + f8_e3;
+	f9_s1  =  64; f9_e1 = 128; f9_e3 = 128; f9_e = f9_e1 + f9_e3;
+	conv10 =   2;
+
+	PARAMS_DICT = {
+		"pConv1W"     : {"dtype": "float32", "shape": ( conv1,      3,  7,  7), "broadcast": (False, False, False, False), "isBias": False},
+		"pConv1B"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire2CompW" : {"dtype": "float32", "shape": ( f2_s1,  conv1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire2CompB" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire2Exp1W" : {"dtype": "float32", "shape": ( f2_e1,  f2_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire2Exp1B" : {"dtype": "float32", "shape": (     1,  f2_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire2Exp3W" : {"dtype": "float32", "shape": ( f2_e3,  f2_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire2Exp3B" : {"dtype": "float32", "shape": (     1,  f2_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire3CompW" : {"dtype": "float32", "shape": ( f3_s1,  f2_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire3CompB" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire3Exp1W" : {"dtype": "float32", "shape": ( f3_e1,  f3_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire3Exp1B" : {"dtype": "float32", "shape": (     1,  f3_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire3Exp3W" : {"dtype": "float32", "shape": ( f3_e3,  f3_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire3Exp3B" : {"dtype": "float32", "shape": (     1,  f3_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire4CompW" : {"dtype": "float32", "shape": ( f4_s1,  f3_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire4CompB" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire4Exp1W" : {"dtype": "float32", "shape": ( f4_e1,  f4_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire4Exp1B" : {"dtype": "float32", "shape": (     1,  f4_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire4Exp3W" : {"dtype": "float32", "shape": ( f4_e3,  f4_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire4Exp3B" : {"dtype": "float32", "shape": (     1,  f4_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire5CompW" : {"dtype": "float32", "shape": ( f5_s1,  f4_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire5CompB" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire5Exp1W" : {"dtype": "float32", "shape": ( f5_e1,  f5_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire5Exp1B" : {"dtype": "float32", "shape": (     1,  f5_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire5Exp3W" : {"dtype": "float32", "shape": ( f5_e3,  f5_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire5Exp3B" : {"dtype": "float32", "shape": (     1,  f5_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire6CompW" : {"dtype": "float32", "shape": ( f6_s1,  f5_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire6CompB" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire6Exp1W" : {"dtype": "float32", "shape": ( f6_e1,  f6_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire6Exp1B" : {"dtype": "float32", "shape": (     1,  f6_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire6Exp3W" : {"dtype": "float32", "shape": ( f6_e3,  f6_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire6Exp3B" : {"dtype": "float32", "shape": (     1,  f6_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire7CompW" : {"dtype": "float32", "shape": ( f7_s1,  f6_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire7CompB" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire7Exp1W" : {"dtype": "float32", "shape": ( f7_e1,  f7_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire7Exp1B" : {"dtype": "float32", "shape": (     1,  f7_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire7Exp3W" : {"dtype": "float32", "shape": ( f7_e3,  f7_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire7Exp3B" : {"dtype": "float32", "shape": (     1,  f7_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire8CompW" : {"dtype": "float32", "shape": ( f8_s1,  f7_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire8CompB" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire8Exp1W" : {"dtype": "float32", "shape": ( f8_e1,  f8_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire8Exp1B" : {"dtype": "float32", "shape": (     1,  f8_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire8Exp3W" : {"dtype": "float32", "shape": ( f8_e3,  f8_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire8Exp3B" : {"dtype": "float32", "shape": (     1,  f8_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire9CompW" : {"dtype": "float32", "shape": ( f9_s1,  f8_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire9CompB" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire9Exp1W" : {"dtype": "float32", "shape": ( f9_e1,  f9_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire9Exp1B" : {"dtype": "float32", "shape": (     1,  f9_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pFire9Exp3W" : {"dtype": "float32", "shape": ( f9_e3,  f9_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
+		"pFire9Exp3B" : {"dtype": "float32", "shape": (     1,  f9_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
+		"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
+		"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True }}
+
+	
 	#
 	# Construct a KITNN object.
 	#
 	
-	def __init__(self, sess):
+	def __init__(self):
 		self.theanoSetup()
+		self.setParams(KITNN.getParamRandomInits())
 	
 	#
-	# Load oneself from an HDF5 group.
+	# Random Initialization.
 	#
-	# This operation must be idempotent.
-	#
-	
-	def load(self, sess):
-		pass
-	
-	#
-	# Save oneself to an HDF5 group.
-	#
-	# This operation must be idempotent.
+	# Returns a dictionary containing parameters by name and a random
+	# initialization for each.
 	#
 	
-	def save(self, sess):
-		pass
+	@staticmethod
+	def getParamRandomInits(paramNameList=None):
+		#
+		# If the argument is None, return a random initialization for all
+		# parameters.
+		#
+		
+		if paramNameList==None:
+			paramNameList = KITNN.PARAMS_DICT.keys()
+		
+		# Load up the dictionary
+		paramValueDict = {}
+		for name in paramNameList:
+			desc      = KITNN.PARAMS_DICT[name]
+			dtype     = desc["dtype"]
+			shape     = desc["shape"]
+			isBias    = desc["isBias"]
+			
+			if isBias:
+				value  = np.zeros(shape, dtype)
+			else:
+				gain   = np.sqrt(2)
+				stddev = gain * np.sqrt(2.0 / np.sum(shape[0:2]))
+				value  = np.random.normal(scale=stddev, size=shape).astype(dtype)
+			
+			paramValueDict[name] = value
+		
+		# Return dictionary
+		return paramValueDict
+	
+	#
+	# Set the specified parameters to their associated value.
+	#
+	
+	def setParams(self, paramDict):
+		for (name,value) in paramDict.iteritems():
+			if name in KITNN.PARAMS_DICT:
+				getattr(self.T, name).set_value(value[...])
+			else:
+				print("Not setting value of non-existent parameter \""+name+"\".")
+	
+	#
+	# Returns the value of the parameters asked for by name in a dictionary.
+	#
+	
+	def getParams(self, paramNameList=None):
+		# Returned dictionary.
+		paramDict = {}
+		
+		# If paramNameList is None, return all parameters.
+		if paramNameList == None:
+			paramNameList = KITNN.PARAMS_DICT.keys()
+		
+		# Load up the dictionary
+		for name in paramNameList:
+			if name in KITNN.PARAMS_DICT:
+				paramDict[name] = getattr(self.T, name).get_value()
+			else:
+				print("Not getting value of non-existent parameter \""+name+"\".")
+		
+		# Return the dictionary
+		return paramDict
 	
 	#
 	# Classify image(s).
@@ -836,19 +942,7 @@ class KITNN(Object):
 	#
 	
 	def classify(self, imgs):
-		pass
-	
-	#
-	# Train update.
-	#
-	# Performs forwardprop, backprop and update by invoking the training
-	# function.
-	#
-	# Returns the training function's return values.
-	#
-	
-	def update(self, **kwargs):
-		pass
+		return self.T.classf(imgs)
 	
 	#
 	# Theano setup.
@@ -864,7 +958,7 @@ class KITNN(Object):
 	#
 	
 	def constructTheanoSVs(self):
-		for (name, desc) in PARAMS_DICT.iteritems():
+		for (name, desc) in KITNN.PARAMS_DICT.iteritems():
 			value         = np.empty(desc["shape"], desc["dtype"])
 			broadcastable = desc["broadcast"]
 			setattr(self.T, name, T.shared(value=value, name=name, broadcastable=broadcastable))
@@ -1022,10 +1116,6 @@ taken, plus optional arguments. The following verbs are defined:
 
 """[1:-1] #This hack deletes the newlines before and after the triple quotes.
 	)
-	
-	pdb.set_trace()
-
-
 
 #
 # Classify the argument images as cat or dog.
@@ -1034,47 +1124,48 @@ taken, plus optional arguments. The following verbs are defined:
 def verb_classify(argv):
 	print argv
 
-
-
-#
-# Extract code and arguments from the session file. Print the args to stderr
-# and the .tar.gz to stdout.
-#
-
-def verb_extractCode(argv):
-	print argv
-
-
-
 #
 # Train KITNN.
 #
 
 def verb_train(argv=None):
-	kitnnTrainer = KITNNTrainer(argv)
-	#kitnnTrainer.train()
+	# Open session file, clean out inconsistent sessions and create a consistent session.
+	f = H.File(argv[2], "a")
+	f = KFOpen(f)
+	KFPruneInconsistentSessions(f)
+	s = KFCreateConsistentSession(f)
 	
-	while True:
-		ts = time.time()
-		s = kitnnTrainer.kitnn.T.classf(np.zeros((64,3,192,192), dtype="float32"))[0].shape
-		te = time.time()
-		print s, te-ts, "s"
+	# Run training with this consistent session.
+	kitnnTrainer = KITNNTrainer(s)
+	kitnnTrainer.train()
 	
-	#pdb.set_trace()
-
-
-
+	# UNREACHABLE, because training is (should be) an infinite loop.
+	pdb.set_trace()
 
 #
 # Screw around.
 #
 
 def verb_screw(argv=None):
-	f = H.File(argv[2], "a")           # Create file
-	f = KFOpen(f)
+	f = KFOpen(argv[2], "a")
 	KFPruneInconsistentSessions(f)
 	s = KFCreateConsistentSession(f)
 
+#
+# Create session.
+#
+
+def verb_create(argv):
+	name = argv[2]
+	
+	# Guard against the file already existing
+	if os.path.isfile(name):
+		print("ERROR: File \""+name+"\" already exists!")
+		return
+	
+	# Create file.
+	f = KFOpen(name, "a")
+	s = KFCreateConsistentSession(f)
 
 #
 # Screw around.
@@ -1083,21 +1174,19 @@ def verb_screw(argv=None):
 def verb_interactive(argv=None):
 	pdb.set_trace()
 
-
 #
 # Dump parameter dict
 #
 
-def verb_dumpparamdict(argv):
+def verb_dumpparamdict(argv=None):
 	totalParams = 0
 	
-	for (k,v) in sorted(PARAMS_DICT.iteritems()):
+	for (k,v) in sorted(KITNN.PARAMS_DICT.iteritems()):
 		vShape        = v["shape"]
 		vNumParams    = np.prod(vShape)
 		totalParams  += vNumParams
 		print("{:20s}: {:10d}".format(k, vNumParams))
 	print("{:20s}: {:10d}".format("TOTAL", totalParams))
-
 
 #
 # Dump source code of session
