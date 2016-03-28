@@ -55,6 +55,7 @@ import theano                          as T
 import theano.tensor                   as TT
 import theano.tensor.nnet              as TTN
 import theano.tensor.nnet.conv         as TTNC
+import theano.tensor.nnet.bn           as TTNB
 import theano.tensor.signal.pool       as TTSP
 from   theano import config            as TC
 import theano.printing                 as TP
@@ -90,7 +91,7 @@ import time
 #               velocities/                                    Velocities for momentum methods
 #                 <paramHierarchy>        T                    *** MODEL-DEPENDENT ***
 #             misc/                                            Miscellaneous state
-#               mC                        str                  Name of continuation function to be called.
+#               cc                        str                  Name of continuation function to be called.
 #               PRNG/                                          Numpy MERSENNE TWISTER PRNG state
 #                 name                    str                  String "MT19937"
 #                 keys                    uint32[624]          Keys.
@@ -425,7 +426,7 @@ def KSnapshotInitRandom(snap, **kwargs):
 	snap.require_dataset("curr/log/validErr",  (0,), "float64", maxshape=(None,))
 	
 	# currKITNN/misc folder.
-	snap.require_dataset("curr/misc/mC",        (), H5PY_VLEN_STR, exact=True)[...] = KITNN_TRAIN_ENTRY_POINT
+	snap.require_dataset("curr/misc/cc",        (), H5PY_VLEN_STR, exact=True)[...] = KITNN_TRAIN_ENTRY_POINT
 	snap.require_dataset("curr/misc/mE",        (), "uint64", exact=True)[...]      = 0
 	snap.require_dataset("curr/misc/mTTI",      (), "uint64", exact=True)[...]      = 0
 	snap.require_dataset("curr/misc/mCTI",      (), "uint64", exact=True)[...]      = 0
@@ -455,10 +456,10 @@ def KSGetAtomicSnapshotNum(sess):
 
 def KSToggleAtomicSnapshotNum(sess, newNum=None):
 	KFFlush(sess)
-	num = KSGetAtomicSnapshotNum(sess)
+	num = long(KSGetAtomicSnapshotNum(sess))
 	
 	if newNum != None:
-		newNum = int(newNum)
+		newNum = long(newNum)
 	else:
 		newNum = num ^ 1
 	
@@ -480,18 +481,19 @@ class KITNNTrainer(Object):
 	# Construct a trainer object from a session.
 	#
 	
-	def __init__(self, sess, model="curr"):
-		# A session *must* be provided.
-		if sess==None:
-			raise ValueError("Session cannot be none!")
+	def __init__(self, sess, dataset, model="curr"):
+		# A session and dataset *must* be provided.
+		if sess==None or dataset==None:
+			raise ValueError("Session or dataset cannot be None!")
 		
 		# Initialize a few objects and constants to default values.
-		self.T             = Object()
+		self.D             = dataset
 		self.kTB           = 50
 		self.kCB           = 500
 		
 		# Initialize the mutable state of the trainer.
-		self.mC            = eval(KITNN_TRAIN_ENTRY_POINT)
+		self.cc            = KITNN_TRAIN_ENTRY_POINT
+		self.mC            = eval(self.cc)
 		self.mE            = 0
 		self.mTTI          = 0
 		self.mCTI          = 0
@@ -501,18 +503,15 @@ class KITNNTrainer(Object):
 		self.logTrainLoss  = []
 		self.logTrainErr   = []
 		self.logValidErr   = []
+		self.theanoSetup()
 		
 		
 		# Load parameters
 		self.sess          = sess
-		self.T.kitnn       = KITNN()
 		self.load(self.sess, model)
-		
-		self.train_ix = np.zeros((10000,10), dtype="float32")
-		self.valid_ix = np.zeros(( 2000,10), dtype="float32")
 	
 	#
-	# Load parameters from the "current" snapshot.
+	# Load state from the "current" snapshot.
 	# By default, load from the "best" model rather than the "curr" model.
 	#
 	
@@ -523,55 +522,111 @@ class KITNNTrainer(Object):
 		if model != "best" and model != "curr":
 			raise ValueError("Chosen model must be either \"best\" (default) or \"curr\"!")
 		
+		# Get current snapshot.
+		model = sess["snap/"+str(KSGetAtomicSnapshotNum(sess))+"/"+model]
 		
+		# Read all the state.
+		np.random.set_state(KDReadPRNG(model["misc/PRNG"]))
+		self.cc            = str(model["misc/cc"][()])
+		self.mC            = eval(self.cc)
+		self.mE            = long(model["misc/mE"][()])
+		self.mTTI          = long(model["misc/mTTI"][()])
+		self.mCTI          = long(model["misc/mCTI"][()])
+		self.mCVI          = long(model["misc/mCVI"][()])
+		self.mCTErrCnt     = long(model["misc/mCTErrCnt"][()])
+		self.mCVErrCnt     = long(model["misc/mCVErrCnt"][()])
+		self.logTrainLoss  = model["log/trainLoss"][...].tolist()
+		self.logTrainErr   = model["log/trainErr"][...].tolist()
+		self.logValidErr   = model["log/validErr"][...].tolist()
+		self.T.kitnn.setParams(model["data/parameters"])           # Parameters
+		for (name, desc) in KITNN.PARAMS_DICT.iteritems():         # Velocities
+			getattr(self.T.vel, name).set_value(model["data/velocities/"+name][...])
 	
 	#
-	# Save parameters to the "next" snapshot.
+	# Save state to the "next" snapshot.
 	# By default, save to the "curr" model rather than the "best" model.
 	#
+	# Then, flip the buffer atomically.
+	#
 	
-	def save(self, sess, model="curr"):
+	def save(self, sess=None, model="curr"):
 		# Argument sanity checks
 		if sess == None:
-			raise ValueError("Must provide a session to load from!")
+			if self.sess == None:
+				raise ValueError("Must provide a session to load from!")
+			else:
+				sess = self.sess
 		if model != "best" and model != "curr":
-			raise ValueError("Chosen model must be either \"best\" (default) or \"curr\"!")
+			raise ValueError("Chosen model must be either \"curr\" (default) or \"best\"!")
 		
+		# Get next snapshot.
+		model = sess["snap/"+str(int(KSGetAtomicSnapshotNum(sess))^1)+"/"+model]
 		
+		# Write all the state.
+		KDWritePRNG(model["misc/PRNG"], np.random.get_state())
+		model["misc/cc"][()]          = str(self.cc)
+		model["misc/mE"][()]          = long(self.mE)
+		model["misc/mTTI"][()]        = long(self.mTTI)
+		model["misc/mCTI"][()]        = long(self.mCTI)
+		model["misc/mCVI"][()]        = long(self.mCVI)
+		model["misc/mCTErrCnt"][()]   = long(self.mCTErrCnt)
+		model["misc/mCVErrCnt"][()]   = long(self.mCVErrCnt)
+		
+		model["log/trainLoss"].resize((len(self.logTrainLoss),))
+		model["log/trainLoss"][...]   = np.array(self.logTrainLoss)
+		model["log/trainErr"] .resize((len(self.logTrainErr),))
+		model["log/trainErr"] [...]   = np.array(self.logTrainErr)
+		model["log/validErr"] .resize((len(self.logValidErr),))
+		model["log/validErr"] [...]   = np.array(self.logValidErr)
+		
+		for (name, value) in self.T.kitnn.getParams().iteritems():   # Parameters
+			model["data/parameters/"+name][...] = getattr(self.T.kitnn.T, name).get_value()
+		for name in KITNN.PARAMS_DICT.keys():                        # Velocities
+			model["data/velocities/"+name][...] = getattr(self.T.vel, name).get_value()
+		
+		# Flip the snapshots atomically.
+		KSToggleAtomicSnapshotNum(sess)
 	
 	#
 	# Train a KITNN.
 	#
 	# This method assumes that the trainer object is fully initialized, and in
-	# particular that the present continuation is in self.cc.
+	# particular that the present continuation is in self.mC.
 	#
 	
 	def train(self):
 		try:
-			while callable(self.cc):
-				self.cc = self.cc(self)
-		except KeyboardInterrupt as kbdie:
-			print("\nStopped.")
+			while callable(self.mC):
+				self.mC = self.mC(self)
+		except:
+			import traceback
+			traceback.print_exc()
+			
 		finally:
-			return self.cc
+			print("\nStopped.")
+			return self.mC
 	
 	#
 	# Invoke a continuation, possibly snapshotting and printing to stdout as well.
 	#
 	
-	def invoke(self, cc, snap=False, newLine=False, **kwargs):
+	def invoke(self, mC, snap=False, newLine=False, **kwargs):
+		if callable(snap): snap=bool(snap())
+		
 		#
-		# (Maybe) take a snapshot. We make a commitment to call cc, then
-		# immediately invoke it. There must be **NO** state-changing after this
-		# if and before the returning of the continuation.
+		# (Maybe) take a snapshot. We make a commitment to call mC, then
+		# immediately invoke it. There must be **NO** state-changing after the
+		# end of this "if" and before the calling of committed continuation.
 		#
 		
-		if callable(snap): snap=snap()
-		if(type(snap) == bool and snap):
+		self.cc = mC.func_name
+		if snap:
+			self.save()
+			
 			sys.stdout.write("  Snapshot!\n")
 			sys.stdout.flush()
 		
-		return cc
+		return mC
 	
 	#
 	# Snapshot controllers.
@@ -589,67 +644,115 @@ class KITNNTrainer(Object):
 	#
 	
 	def log(self, logEntries):
-		pass
+		if "trainLoss" in logEntries:
+			self.logTrainLoss.append(float(logEntries["trainLoss"]))
+		if "trainErr" in logEntries:
+			self.logTrainErr.append(float(logEntries["trainErr"]))
+		if "validErr" in logEntries:
+			self.logValidErr.append(float(logEntries["validErr"]))
+	
+	#
+	# Theano setup.
+	#
+	
+	def theanoSetup(self):
+		self.T             = Object()
+		self.T.vel         = Object()
+		self.T.kitnn       = KITNN()
+		self.constructTheanoSVs()
+		self.constructTheanoTrainF()
+	
+	#
+	# Construct Theano shared variables.
+	#
+	
+	def constructTheanoSVs(self, l1Penalty=0.0000, l2Penalty=0.0000, momentum=0.9, learningRate=0.01):
+		# Velocities
+		for (name, desc) in KITNN.PARAMS_DICT.iteritems():
+			value         = np.zeros(desc["shape"], desc["dtype"])
+			broadcastable = desc["broadcast"]
+			setattr(self.T.vel, name, T.shared(value=value, name=name, broadcastable=broadcastable))
+		
+		# Regularization penalties
+		self.T.hL1P = T.shared(np.full((), l1Penalty,    dtype="float32"), "hL1P")
+		self.T.hL2P = T.shared(np.full((), l2Penalty,    dtype="float32"), "hL2P")
+		
+		# Momentum and Learning Rate
+		self.T.hMom = T.shared(np.full((), momentum,     dtype="float32"), "hMom")
+		self.T.hLrn = T.shared(np.full((), learningRate, dtype="float32"), "hLrn")
 	
 	#
 	# Construct Theano training function.
 	#
 	
-	def constructTrainF():
+	def constructTheanoTrainF(self, momentumMethod="NAG"):
 		#
 		# Training function construction.
 		#
 		
-		# Inputs also include iy.
-		iy = TT.tensor4("y") # (Batch=hB, #Classes=10, Height=1, Width=1)
+		# Inputs to training function.
+		self.T.ix = self.T.kitnn.T.ix                # (Batch=hB, 3, Height=192, Width=192)
+		self.T.iy = TT.tensor4("y", dtype="float32") # (Batch=hB, #Classes=10, Height=1, Width=1)
 		
+		# Classification work
+		self.T.oy = self.T.kitnn.T.oy
 		
-		######################  Regularization
-		L1decay      = TT.sum(TT.abs_(SV["pLaW"])) + TT.sum(TT.abs_(SV["pLcW"])) + TT.sum(TT.abs_(SV["pLeW"])) + \
-		               TT.sum(TT.abs_(SV["pLfW"])) + TT.sum(TT.abs_(SV["pLhW"])) + TT.sum(TT.abs_(SV["pLiW"])) + \
-		               TT.sum(TT.abs_(SV["pLjW"]))
-		L2decay      = TT.sum(SV["pLaW"]*SV["pLaW"]) + TT.sum(SV["pLcW"]*SV["pLcW"]) + TT.sum(SV["pLeW"]*SV["pLeW"]) + \
-		               TT.sum(SV["pLfW"]*SV["pLfW"]) + TT.sum(SV["pLhW"]*SV["pLhW"]) + TT.sum(SV["pLiW"]*SV["pLiW"]) + \
-		               TT.sum(SV["pLjW"]*SV["pLjW"])
+		# Regularization
+		self.T.L1norm   = TT.zeros((), dtype="float32")
+		self.T.L2norm   = TT.zeros((), dtype="float32")
+		for name in KITNN.PARAMS_DICT.keys():
+			if not KITNN.PARAMS_DICT[name]["isBias"]:
+				self.T.L1norm += TT.sum(TT.abs_(getattr(self.T.kitnn.T, name)));
+				self.T.L2norm += TT.sum(TT.pow (getattr(self.T.kitnn.T, name), 2));
 		
+		# Cross-Entropy Loss
+		self.T.CELoss    = TT.sum(TT.mean(-self.T.iy * TT.log(self.T.oy), axis=0)) / np.log(2)
+		self.T.TotalLoss = self.T.CELoss               + \
+		                   self.T.L1norm * self.T.hL1P + \
+		                   self.T.L2norm * self.T.hL2P
 		
-		######################  Cross-Entropy Loss
-		oceloss      = TT.sum(TT.mean(-iy*TT.log(oy), axis=0))           # Average across batch, sum over space.
-		oloss        = oceloss # + L2decay*SV["hL2P"] + L1decay*SV["hL1P"]
-		
-		
-		######################  Update rules & Gradients
+		# Update rules & Gradients
 		updates = []
-		for (name, param) in SV.iteritems():
-			if(name.startswith("p")):
-				#
-				# It's a parameter, so we do SGD with momentum on it.
-				#
-				# To do this we get the gradient and construct a velocity shared variable.
-				#
+		if   momentumMethod == "NAG":
+			#
+			# Nesterov Accelerated Gradient momentum method.
+			#
+			# State equations:
+			#     $ v_{t+1}      = \mu v_{t} - \epsilon \nabla f(\theta_t)$
+			#     $ \theta_{t+1} = \theta_{t} - \mu v_{t} + (1+\mu) v_{t+1}$
+			#
+			
+			for name in KITNN.PARAMS_DICT.keys():
+				paramVel = getattr(self.T.vel, name)
+				paramVal = getattr(self.T.kitnn.T, name)
+				paramGrd = T.grad(self.T.TotalLoss, paramVal)
 				
-				pgrad = T.grad(oloss, param)
-				pvel  = T.shared(np.zeros(param.get_value().shape, dtype=param.dtype),
-				                 name          = param.name+"vel",
-				                 broadcastable = param.broadcastable)
+				newParamVel = self.T.hMom * paramVel   -   self.T.hLrn * paramGrd
+				newParamVal = paramVal                        - \
+				              (self.T.hMom    ) * paramVel    + \
+				              (1.0+self.T.hMom) * newParamVel
 				
-				# Momentum rule:
-				newpvel  = SV["hMom"]*pvel + (1.0-SV["hMom"])*pgrad
-				newparam = param - SV["hLrn"]*newpvel
+				updates.append((paramVel, newParamVel))
+				updates.append((paramVal, newParamVal))
+		elif momentumMethod == "SGD":
+			for name in KITNN.PARAMS_DICT.keys():
+				paramVal = getattr(self.T.kitnn.T, name)
+				paramGrd = T.grad(self.T.TotalLoss, paramVal)
 				
-				#Updates
-				updates.append((pvel,
-				                newpvel))
-				updates.append((param,
-				                newparam))
-		
+				newParamVal = paramVal - self.T.hLrn * paramGrd
+				
+				updates.append((paramVal, newParamVal))
+		else:
+			raise ValueError("Momentum methods other than NAG currently unsupported!")
 		
 		# Function creation
-		lossf  = T.function(inputs=[ix, iy], outputs=oloss, updates=updates, name="loss-function")
+		self.T.trainf  = T.function(inputs  = [self.T.ix, self.T.iy],
+		                            outputs = [self.T.TotalLoss],
+		                            updates = updates,
+		                            name    = "loss-function")
 		
-		
-		#TP.pydotprint(lossf, "graph.png", format="png", with_ids=False, compact=True)
-		return lossf
+		# Return function
+		return self.T.trainf
 
 
 ###############################################################################
@@ -693,18 +796,31 @@ def KTTrainOverTrainLoop(cc):
 	#
 	# Train-over-Train Loop CONDITION
 	#
-	if((cc.mTTI + cc.kTB) <= len(cc.train_ix)):
+	if(cc.mTTI + cc.kTB <= 20000):
 		#
 		# Train-over-Train Loop BODY
 		#
 		
-		#cc.uploadTrainData(cc.mTTI, cc.kTB)
-		loss = 0#cc.invokeTrainF()
-		sys.stdout.write("TT ")
-		sys.stdout.flush()
+		ts = time.time()
+		
+		sel_ix = np.empty((cc.kTB, 3, 192, 192), dtype="float32")
+		sel_iy = np.empty((cc.kTB, 2,   1,   1), dtype="float32")
+		
+		sel_ix[:cc.kTB/2] = cc.D["/data/x_256x256"][      cc.mTTI/2:      cc.mTTI/2+cc.kTB/2,:,32:-32,32:-32].astype("float32")
+		sel_ix[cc.kTB/2:] = cc.D["/data/x_256x256"][12500+cc.mTTI/2:12500+cc.mTTI/2+cc.kTB/2,:,32:-32,32:-32].astype("float32")
+		sel_iy[:cc.kTB/2] = cc.D["/data/y"]        [      cc.mTTI/2:      cc.mTTI/2+cc.kTB/2,:].reshape((cc.kTB/2,2,1,1))
+		sel_iy[cc.kTB/2:] = cc.D["/data/y"]        [12500+cc.mTTI/2:12500+cc.mTTI/2+cc.kTB/2,:].reshape((cc.kTB/2,2,1,1))
+		
+		loss = cc.T.trainf(sel_ix, sel_iy)
 		
 		cc.mTTI += cc.kTB
-		cc.log({"trainLoss":float(loss)})
+		cc.log({"trainLoss":float(loss[0][()])})
+		
+		te = time.time()
+		
+		sys.stdout.write("Epoch: {:5d}  Iter {:5d}  Loss: {:20.17f}  Time: {:8.4f}s\n".format(cc.mE, cc.mTTI/cc.kTB, loss[0][()], te-ts))
+		sys.stdout.flush()
+		
 		return cc.invoke(KTTrainOverTrainLoop, snap=cc.shouldTTSnap)
 	else:
 		#
@@ -716,18 +832,29 @@ def KTCheckOverTrainLoop(cc):
 	#
 	# Check-over-Train Loop CONDITION
 	#
-	if(cc.mCTI + cc.kCB <= len(cc.train_ix)):
+	if(cc.mCTI + cc.kCB <= 20000):
 		#
 		# Check-over-Train Loop BODY
 		#
 		
-		#cc.uploadTrainData(cc.mCTI, cc.kCB)
-		#yEst = cc.invokeClassF()
+		sel_ix            = np.empty((cc.kCB,3,192,192), dtype="float32")
+		sel_iy            = np.empty((cc.kCB,2,  1,  1), dtype="float32")
+		sel_ix[:cc.kCB/2] = cc.D["/data/x_256x256"][      cc.mCTI/2:      cc.mCTI/2+cc.kCB/2,:,32:-32,32:-32]
+		sel_ix[cc.kCB/2:] = cc.D["/data/x_256x256"][12500+cc.mCTI/2:12500+cc.mCTI/2+cc.kCB/2,:,32:-32,32:-32]
+		sel_iy[:cc.kCB/2] = cc.D["/data/y"]        [      cc.mCTI/2:      cc.mCTI/2+cc.kCB/2,:].reshape((cc.kCB/2,2,1,1))
+		sel_iy[cc.kCB/2:] = cc.D["/data/y"]        [12500+cc.mCTI/2:12500+cc.mCTI/2+cc.kCB/2,:].reshape((cc.kCB/2,2,1,1))
+		
+		yEst   = cc.T.kitnn.classify(sel_ix)[0]
+		
+		yEst   = yEst  .reshape((cc.kCB,2))
+		sel_iy = sel_iy.reshape((cc.kCB,2))
+		yDiff  = np.argmax(sel_iy, axis=1) != np.argmax(yEst, axis=1)
 		
 		cc.mCTI      += cc.kCB
-		#cc.mCTErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+		cc.mCTErrCnt += long(np.sum(yDiff))
 		
-		sys.stdout.write("CT ")
+		sys.stdout.write("\rChecking... {:5d} train set errors on {:5d} checked ({:7.3f}%)".format(
+		                 cc.mCTErrCnt, cc.mCTI, 100.0*float(cc.mCTErrCnt)/cc.mCTI))
 		sys.stdout.flush()
 		
 		return cc.invoke(KTCheckOverTrainLoop, snap=cc.shouldCTSnap)
@@ -735,6 +862,7 @@ def KTCheckOverTrainLoop(cc):
 		#
 		# Check-over-Train Loop EPILOGUE
 		#
+		
 		cc.log({"trainErr":float(cc.mCTErrCnt)/cc.mCTI})
 		return cc.invoke(KTCheckOverValidLoop, snap=True)
 @cps
@@ -742,18 +870,29 @@ def KTCheckOverValidLoop(cc):
 	#
 	# Check-over-Valid Loop CONDITION
 	#
-	if(cc.mCVI + cc.kCB <= len(cc.valid_ix)):
+	if(cc.mCVI + cc.kCB <= 5000):
 		#
 		# Check-over-Valid Loop BODY
 		#
 		
-		#cc.uploadTrainData(cc.mCVI, cc.kCB)
-		#yEst = cc.invokeClassF()
+		sel_ix            = np.empty((cc.kCB,3,192,192), dtype="float32")
+		sel_iy            = np.empty((cc.kCB,2,  1,  1), dtype="float32")
+		sel_ix[:cc.kCB/2] = cc.D["/data/x_256x256"][10000+cc.mCVI/2:10000+cc.mCVI/2+cc.kCB/2,:,32:-32,32:-32]
+		sel_ix[cc.kCB/2:] = cc.D["/data/x_256x256"][22500+cc.mCVI/2:22500+cc.mCVI/2+cc.kCB/2,:,32:-32,32:-32]
+		sel_iy[:cc.kCB/2] = cc.D["/data/y"]        [10000+cc.mCVI/2:10000+cc.mCVI/2+cc.kCB/2,:].reshape((cc.kCB/2,2,1,1))
+		sel_iy[cc.kCB/2:] = cc.D["/data/y"]        [22500+cc.mCVI/2:22500+cc.mCVI/2+cc.kCB/2,:].reshape((cc.kCB/2,2,1,1))
+		
+		yEst   = cc.T.kitnn.classify(sel_ix)[0]
+		
+		yEst   = yEst  .reshape((cc.kCB,2))
+		sel_iy = sel_iy.reshape((cc.kCB,2))
+		yDiff  = np.argmax(sel_iy, axis=1) != np.argmax(yEst, axis=1)
 		
 		cc.mCVI      += cc.kCB
-		#cc.mCVErrCnt += np.sum(np.argmax(yTrue, axis=1) != np.argmax(yEst))
+		cc.mCVErrCnt += long(np.sum(yDiff))
 		
-		sys.stdout.write("CV ")
+		sys.stdout.write("\rChecking... {:5d} valid set errors on {:5d} checked ({:7.3f}%)".format(
+		                 cc.mCVErrCnt, cc.mCVI, 100.0*float(cc.mCVErrCnt)/cc.mCVI))
 		sys.stdout.flush()
 		
 		return cc.invoke(KTCheckOverValidLoop, snap=cc.shouldCVSnap)
@@ -761,20 +900,18 @@ def KTCheckOverValidLoop(cc):
 		#
 		# Check-over-Valid Loop EPILOGUE
 		#
+		
 		cc.log({"validErr":float(cc.mCVErrCnt)/cc.mCVI})
-		sys.stdout.write("\n")
-		sys.stdout.flush()
 		return cc.invoke(KTEpochLoopEnd, snap=False)
 @cps
 def KTEpochLoopEnd(cc):
 	# Save if best model so far.
 	#cc.saveIfBestSoFar()
 	
-	#Increment epoch number
+	# Increment epoch number
 	cc.mE += 1
-	if(cc.mE >= 10):
-		return 0
 	
+	# Loop
 	return cc.invoke(KTEpochLoopStart, snap=True, newLine=True)
 
 
@@ -787,7 +924,7 @@ class KITNN(Object):
 	###############################################################################
 	# SqueezeNet configuration and parameter dictionary.
 	#
-	# "name" : {"dtype": "flaot32", "shape": (,,,), "broadcast": (,,,), "isBias":bool}
+	# "name" : {"dtype": "float32", "shape": (,,,), "broadcast": (,,,), "isBias":bool}
 	#
 	
 	conv1  =  48;
@@ -893,7 +1030,7 @@ class KITNN(Object):
 				value  = np.zeros(shape, dtype)
 			else:
 				gain   = np.sqrt(2)
-				stddev = gain * np.sqrt(2.0 / np.sum(shape[0:2]))
+				stddev = gain * np.sqrt(2.0 / np.prod(shape[0:4]))
 				value  = np.random.normal(scale=stddev, size=shape).astype(dtype)
 			
 			paramValueDict[name] = value
@@ -1074,8 +1211,10 @@ class KITNN(Object):
 		
 		######################  Softmax
 		self.T.vSMi          = self.T.vAvgpool10
-		self.T.vSMu          = TT.exp(self.T.vSMi - TT.max(self.T.vSMi, axis=1, keepdims=1))
-		self.T.vSM           =        self.T.vSMu / TT.sum(self.T.vSMu, axis=1, keepdims=1)
+		self.T.vSMm          = self.T.vSMi - TT.max(self.T.vSMi, axis=1, keepdims=1)
+		self.T.vSMu          = TT.exp(self.T.vSMm)
+		self.T.vSMn          = TT.sum(self.T.vSMu, axis=1, keepdims=1)
+		self.T.vSM           = self.T.vSMu / self.T.vSMn
 		
 		######################  Output layer
 		self.T.oy           = self.T.vSM
@@ -1135,8 +1274,10 @@ def verb_train(argv=None):
 	KFPruneInconsistentSessions(f)
 	s = KFCreateConsistentSession(f)
 	
+	d = H.File(argv[3], "r")
+	
 	# Run training with this consistent session.
-	kitnnTrainer = KITNNTrainer(s)
+	kitnnTrainer = KITNNTrainer(s, d)
 	kitnnTrainer.train()
 	
 	# UNREACHABLE, because training is (should be) an infinite loop.
