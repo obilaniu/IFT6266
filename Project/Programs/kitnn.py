@@ -61,6 +61,9 @@ from   theano import config            as TC
 import theano.printing                 as TP
 import time
 
+# Import hacks
+TTNB.bnorm = TTNB.batch_normalization  # This is an obnoxiously long function name.
+
 
 ###############################################################################
 # KITNN HDF5 file format
@@ -666,7 +669,7 @@ class KITNNTrainer(Object):
 	# Construct Theano shared variables.
 	#
 	
-	def constructTheanoSVs(self, l1Penalty=0.0000, l2Penalty=0.0000, momentum=0.9, learningRate=0.01):
+	def constructTheanoSVs(self, l1Penalty=0.0002, l2Penalty=0.000002, momentum=0.9, learningRate=0.01):
 		# Velocities
 		for (name, desc) in KITNN.PARAMS_DICT.iteritems():
 			value         = np.zeros(desc["shape"], desc["dtype"])
@@ -701,7 +704,7 @@ class KITNNTrainer(Object):
 		self.T.L1norm   = TT.zeros((), dtype="float32")
 		self.T.L2norm   = TT.zeros((), dtype="float32")
 		for name in KITNN.PARAMS_DICT.keys():
-			if not KITNN.PARAMS_DICT[name]["isBias"]:
+			if KITNN.PARAMS_DICT[name]["type"] == "weight":
 				self.T.L1norm += TT.sum(TT.abs_(getattr(self.T.kitnn.T, name)));
 				self.T.L2norm += TT.sum(TT.pow (getattr(self.T.kitnn.T, name), 2));
 		
@@ -939,58 +942,68 @@ class KITNN(Object):
 	conv10 =   2;
 
 	PARAMS_DICT = {
-		"pConv1W"     : {"dtype": "float32", "shape": ( conv1,      3,  7,  7), "broadcast": (False, False, False, False), "isBias": False},
-		"pConv1B"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire2CompW" : {"dtype": "float32", "shape": ( f2_s1,  conv1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire2CompB" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire2Exp1W" : {"dtype": "float32", "shape": ( f2_e1,  f2_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire2Exp1B" : {"dtype": "float32", "shape": (     1,  f2_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire2Exp3W" : {"dtype": "float32", "shape": ( f2_e3,  f2_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire2Exp3B" : {"dtype": "float32", "shape": (     1,  f2_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire3CompW" : {"dtype": "float32", "shape": ( f3_s1,  f2_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire3CompB" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire3Exp1W" : {"dtype": "float32", "shape": ( f3_e1,  f3_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire3Exp1B" : {"dtype": "float32", "shape": (     1,  f3_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire3Exp3W" : {"dtype": "float32", "shape": ( f3_e3,  f3_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire3Exp3B" : {"dtype": "float32", "shape": (     1,  f3_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire4CompW" : {"dtype": "float32", "shape": ( f4_s1,  f3_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire4CompB" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire4Exp1W" : {"dtype": "float32", "shape": ( f4_e1,  f4_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire4Exp1B" : {"dtype": "float32", "shape": (     1,  f4_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire4Exp3W" : {"dtype": "float32", "shape": ( f4_e3,  f4_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire4Exp3B" : {"dtype": "float32", "shape": (     1,  f4_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire5CompW" : {"dtype": "float32", "shape": ( f5_s1,  f4_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire5CompB" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire5Exp1W" : {"dtype": "float32", "shape": ( f5_e1,  f5_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire5Exp1B" : {"dtype": "float32", "shape": (     1,  f5_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire5Exp3W" : {"dtype": "float32", "shape": ( f5_e3,  f5_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire5Exp3B" : {"dtype": "float32", "shape": (     1,  f5_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire6CompW" : {"dtype": "float32", "shape": ( f6_s1,  f5_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire6CompB" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire6Exp1W" : {"dtype": "float32", "shape": ( f6_e1,  f6_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire6Exp1B" : {"dtype": "float32", "shape": (     1,  f6_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire6Exp3W" : {"dtype": "float32", "shape": ( f6_e3,  f6_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire6Exp3B" : {"dtype": "float32", "shape": (     1,  f6_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire7CompW" : {"dtype": "float32", "shape": ( f7_s1,  f6_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire7CompB" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire7Exp1W" : {"dtype": "float32", "shape": ( f7_e1,  f7_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire7Exp1B" : {"dtype": "float32", "shape": (     1,  f7_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire7Exp3W" : {"dtype": "float32", "shape": ( f7_e3,  f7_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire7Exp3B" : {"dtype": "float32", "shape": (     1,  f7_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire8CompW" : {"dtype": "float32", "shape": ( f8_s1,  f7_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire8CompB" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire8Exp1W" : {"dtype": "float32", "shape": ( f8_e1,  f8_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire8Exp1B" : {"dtype": "float32", "shape": (     1,  f8_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire8Exp3W" : {"dtype": "float32", "shape": ( f8_e3,  f8_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire8Exp3B" : {"dtype": "float32", "shape": (     1,  f8_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire9CompW" : {"dtype": "float32", "shape": ( f9_s1,  f8_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire9CompB" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire9Exp1W" : {"dtype": "float32", "shape": ( f9_e1,  f9_s1,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire9Exp1B" : {"dtype": "float32", "shape": (     1,  f9_e1,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pFire9Exp3W" : {"dtype": "float32", "shape": ( f9_e3,  f9_s1,  3,  3), "broadcast": (False, False, False, False), "isBias": False},
-		"pFire9Exp3B" : {"dtype": "float32", "shape": (     1,  f9_e3,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True },
-		"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "isBias": False},
-		"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "isBias": True }}
+		"pConv1W"     : {"dtype": "float32", "shape": ( conv1,      3,  7,  7), "broadcast": (False, False, False, False), "type": "weight"},
+		"pConv1B"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pConv1G"     : {"dtype": "float32", "shape": (     1,  conv1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire2CompW" : {"dtype": "float32", "shape": ( f2_s1,  conv1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire2CompB" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire2CompG" : {"dtype": "float32", "shape": (     1,  f2_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire2Exp1W" : {"dtype": "float32", "shape": ( f2_e1,  f2_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire2Exp3W" : {"dtype": "float32", "shape": ( f2_e3,  f2_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire2ExpB"  : {"dtype": "float32", "shape": (     1,  f2_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire2ExpG"  : {"dtype": "float32", "shape": (     1,  f2_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire3CompW" : {"dtype": "float32", "shape": ( f3_s1,  f2_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire3CompB" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire3CompG" : {"dtype": "float32", "shape": (     1,  f3_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire3Exp1W" : {"dtype": "float32", "shape": ( f3_e1,  f3_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire3Exp3W" : {"dtype": "float32", "shape": ( f3_e3,  f3_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire3ExpB"  : {"dtype": "float32", "shape": (     1,  f3_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire3ExpG"  : {"dtype": "float32", "shape": (     1,  f3_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire4CompW" : {"dtype": "float32", "shape": ( f4_s1,  f3_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire4CompB" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire4CompG" : {"dtype": "float32", "shape": (     1,  f4_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire4Exp1W" : {"dtype": "float32", "shape": ( f4_e1,  f4_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire4Exp3W" : {"dtype": "float32", "shape": ( f4_e3,  f4_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire4ExpB"  : {"dtype": "float32", "shape": (     1,  f4_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire4ExpG"  : {"dtype": "float32", "shape": (     1,  f4_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire5CompW" : {"dtype": "float32", "shape": ( f5_s1,  f4_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire5CompB" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire5CompG" : {"dtype": "float32", "shape": (     1,  f5_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire5Exp1W" : {"dtype": "float32", "shape": ( f5_e1,  f5_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire5Exp3W" : {"dtype": "float32", "shape": ( f5_e3,  f5_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire5ExpB"  : {"dtype": "float32", "shape": (     1,  f5_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire5ExpG"  : {"dtype": "float32", "shape": (     1,  f5_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire6CompW" : {"dtype": "float32", "shape": ( f6_s1,  f5_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire6CompB" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire6CompG" : {"dtype": "float32", "shape": (     1,  f6_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire6Exp1W" : {"dtype": "float32", "shape": ( f6_e1,  f6_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire6Exp3W" : {"dtype": "float32", "shape": ( f6_e3,  f6_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire6ExpB"  : {"dtype": "float32", "shape": (     1,  f6_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire6ExpG"  : {"dtype": "float32", "shape": (     1,  f6_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire7CompW" : {"dtype": "float32", "shape": ( f7_s1,  f6_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire7CompB" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire7CompG" : {"dtype": "float32", "shape": (     1,  f7_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire7Exp1W" : {"dtype": "float32", "shape": ( f7_e1,  f7_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire7Exp3W" : {"dtype": "float32", "shape": ( f7_e3,  f7_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire7ExpB"  : {"dtype": "float32", "shape": (     1,  f7_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire7ExpG"  : {"dtype": "float32", "shape": (     1,  f7_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire8CompW" : {"dtype": "float32", "shape": ( f8_s1,  f7_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire8CompB" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire8CompG" : {"dtype": "float32", "shape": (     1,  f8_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire8Exp1W" : {"dtype": "float32", "shape": ( f8_e1,  f8_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire8Exp3W" : {"dtype": "float32", "shape": ( f8_e3,  f8_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire8ExpB"  : {"dtype": "float32", "shape": (     1,  f8_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire8ExpG"  : {"dtype": "float32", "shape": (     1,  f8_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire9CompW" : {"dtype": "float32", "shape": ( f9_s1,  f8_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire9CompB" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire9CompG" : {"dtype": "float32", "shape": (     1,  f9_s1,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pFire9Exp1W" : {"dtype": "float32", "shape": ( f9_e1,  f9_s1,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire9Exp3W" : {"dtype": "float32", "shape": ( f9_e3,  f9_s1,  3,  3), "broadcast": (False, False, False, False), "type": "weight"},
+		"pFire9ExpB"  : {"dtype": "float32", "shape": (     1,  f9_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pFire9ExpG"  : {"dtype": "float32", "shape": (     1,  f9_e ,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" },
+		"pConv10W"    : {"dtype": "float32", "shape": (conv10,  f9_e ,  1,  1), "broadcast": (False, False, False, False), "type": "weight"},
+		"pConv10B"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "type": "beta"  },
+		"pConv10G"    : {"dtype": "float32", "shape": (     1, conv10,  1,  1), "broadcast": ( True, False,  True,  True), "type": "gamma" }}
 
 	
 	#
@@ -1024,13 +1037,15 @@ class KITNN(Object):
 			desc      = KITNN.PARAMS_DICT[name]
 			dtype     = desc["dtype"]
 			shape     = desc["shape"]
-			isBias    = desc["isBias"]
+			isBias    = desc["type"] == "bias"
 			
-			if isBias:
+			if   desc["type"] == "bias" or desc["type"] == "beta":
 				value  = np.zeros(shape, dtype)
+			elif desc["type"] == "gamma":
+				value  = np.ones(shape, dtype)
 			else:
-				gain   = np.sqrt(2)
-				stddev = gain * np.sqrt(2.0 / np.prod(shape[0:4]))
+				gain   = 1/np.sqrt(2)
+				stddev = gain * np.sqrt(2.0 / np.prod(shape[1:]))
 				value  = np.random.normal(scale=stddev, size=shape).astype(dtype)
 			
 			paramValueDict[name] = value
@@ -1114,113 +1129,177 @@ class KITNN(Object):
 		##########################################################
 		
 		######################  Input layer
-		self.T.vIn           = self.T.ix
+		self.T.vIn               = self.T.ix/255.0 - 0.5
 		
 		######################  conv1   XXXXXX
-		self.T.vConv1In      = self.T.vIn
-		self.T.vConv1Act     = TTN .conv2d     (self.T.vConv1In,     self.T.pConv1W,     None, None, "half", (2,2)) + self.T.pConv1B
-		self.T.vConv1        = TTN .relu       (self.T.vConv1Act)
+		self.T.vConv1In          = self.T.vIn
+		self.T.vConv1Act         = TTN .conv2d     (self.T.vConv1In,       self.T.pConv1W,     None, None, "half", (2,2))
+		self.T.vConv1ActM        = TT  .mean       (self.T.vConv1Act,      axis=(0,2,3), keepdims=1)
+		self.T.vConv1ActS        = TT  .std        (self.T.vConv1Act,      axis=(0,2,3), keepdims=1)
+		self.T.vConv1ActN        = TTNB.bnorm      (self.T.vConv1Act,      self.T.pConv1G, self.T.pConv1B,
+		                                            self.T.vConv1ActM,     self.T.vConv1ActS)
+		self.T.vConv1            = TTN .relu       (self.T.vConv1ActN)
 		
 		######################  maxpool1
-		self.T.vMaxpool1     = TTSP.pool_2d    (self.T.vConv1, (3,3), True, (2,2), (1,1), "max")
+		self.T.vMaxpool1         = TTSP.pool_2d    (self.T.vConv1, (3,3),  True, (2,2), (1,1), "max")
 		
 		######################  fire2
-		self.T.vFire2CompAct = TTN .conv2d     (self.T.vMaxpool1,    self.T.pFire2CompW, None, None, "half", (1,1)) + self.T.pFire2CompB
-		self.T.vFire2Comp    = TTN .relu       (self.T.vFire2CompAct)
-		self.T.vFire2Exp1Act = TTN .conv2d     (self.T.vFire2Comp,   self.T.pFire2Exp1W, None, None, "half", (1,1)) + self.T.pFire2Exp1B
-		self.T.vFire2Exp1    = TTN .relu       (self.T.vFire2Exp1Act)
-		self.T.vFire2Exp3Act = TTN .conv2d     (self.T.vFire2Comp,   self.T.pFire2Exp3W, None, None, "half", (1,1)) + self.T.pFire2Exp3B
-		self.T.vFire2Exp3    = TTN .relu       (self.T.vFire2Exp3Act)
-		self.T.vFire2        = TT  .concatenate([self.T.vFire2Exp1,  self.T.vFire2Exp3], axis=1);
+		self.T.vFire2CompAct     = TTN .conv2d     (self.T.vMaxpool1,      self.T.pFire2CompW, None, None, "half", (1,1))
+		self.T.vFire2CompActM    = TT  .mean       (self.T.vFire2CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire2CompActS    = TT  .std        (self.T.vFire2CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire2CompActN    = TTNB.bnorm      (self.T.vFire2CompAct,  self.T.pFire2CompG, self.T.pFire2CompB,
+		                                            self.T.vFire2CompActM, self.T.vFire2CompActS)
+		self.T.vFire2Comp        = TTN .relu       (self.T.vFire2CompActN)
+		self.T.vFire2Exp1Act     = TTN .conv2d     (self.T.vFire2Comp,     self.T.pFire2Exp1W, None, None, "half", (1,1))
+		self.T.vFire2Exp3Act     = TTN .conv2d     (self.T.vFire2Comp,     self.T.pFire2Exp3W, None, None, "half", (1,1))
+		self.T.vFire2ExpAct      = TT  .concatenate([self.T.vFire2Exp1Act, self.T.vFire2Exp1Act], axis=1);
+		self.T.vFire2ExpActM     = TT  .mean       (self.T.vFire2ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire2ExpActS     = TT  .std        (self.T.vFire2ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire2ExpActN     = TTNB.bnorm      (self.T.vFire2ExpAct,   self.T.pFire2ExpG,    self.T.pFire2ExpB,
+		                                            self.T.vFire2ExpActM,  self.T.vFire2ExpActS)
+		self.T.vFire2            = TTN .relu       (self.T.vFire2ExpActN)
 		
 		######################  fire3
-		self.T.vFire3CompAct = TTN .conv2d     (self.T.vFire2,       self.T.pFire3CompW, None, None, "half", (1,1)) + self.T.pFire3CompB
-		self.T.vFire3Comp    = TTN .relu       (self.T.vFire3CompAct)
-		self.T.vFire3Exp1Act = TTN .conv2d     (self.T.vFire3Comp,   self.T.pFire3Exp1W, None, None, "half", (1,1)) + self.T.pFire3Exp1B
-		self.T.vFire3Exp1    = TTN .relu       (self.T.vFire3Exp1Act)
-		self.T.vFire3Exp3Act = TTN .conv2d     (self.T.vFire3Comp,   self.T.pFire3Exp3W, None, None, "half", (1,1)) + self.T.pFire3Exp3B
-		self.T.vFire3Exp3    = TTN .relu       (self.T.vFire3Exp3Act)
-		self.T.vFire3        = TT  .concatenate([self.T.vFire3Exp1,  self.T.vFire3Exp3], axis=1);
+		self.T.vFire3CompAct     = TTN .conv2d     (self.T.vFire2,         self.T.pFire3CompW, None, None, "half", (1,1))
+		self.T.vFire3CompActM    = TT  .mean       (self.T.vFire3CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire3CompActS    = TT  .std        (self.T.vFire3CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire3CompActN    = TTNB.bnorm      (self.T.vFire3CompAct,  self.T.pFire3CompG, self.T.pFire3CompB,
+		                                            self.T.vFire3CompActM, self.T.vFire3CompActS)
+		self.T.vFire3Comp        = TTN .relu       (self.T.vFire3CompActN)
+		self.T.vFire3Exp1Act     = TTN .conv2d     (self.T.vFire3Comp,     self.T.pFire3Exp1W, None, None, "half", (1,1))
+		self.T.vFire3Exp3Act     = TTN .conv2d     (self.T.vFire3Comp,     self.T.pFire3Exp3W, None, None, "half", (1,1))
+		self.T.vFire3ExpAct      = TT  .concatenate([self.T.vFire3Exp1Act, self.T.vFire3Exp1Act], axis=1);
+		self.T.vFire3ExpActM     = TT  .mean       (self.T.vFire3ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire3ExpActS     = TT  .std        (self.T.vFire3ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire3ExpActN     = TTNB.bnorm      (self.T.vFire3ExpAct,   self.T.pFire3ExpG,    self.T.pFire3ExpB,
+		                                            self.T.vFire3ExpActM,  self.T.vFire3ExpActS)
+		self.T.vFire3            = TTN .relu       (self.T.vFire3ExpActN)
 		
 		######################  fire4
-		self.T.vFire4CompAct = TTN .conv2d     (self.T.vFire3,       self.T.pFire4CompW, None, None, "half", (1,1)) + self.T.pFire4CompB
-		self.T.vFire4Comp    = TTN .relu       (self.T.vFire4CompAct)
-		self.T.vFire4Exp1Act = TTN .conv2d     (self.T.vFire4Comp,   self.T.pFire4Exp1W, None, None, "half", (1,1)) + self.T.pFire4Exp1B
-		self.T.vFire4Exp1    = TTN .relu       (self.T.vFire4Exp1Act)
-		self.T.vFire4Exp3Act = TTN .conv2d     (self.T.vFire4Comp,   self.T.pFire4Exp3W, None, None, "half", (1,1)) + self.T.pFire4Exp3B
-		self.T.vFire4Exp3    = TTN .relu       (self.T.vFire4Exp3Act)
-		self.T.vFire4        = TT  .concatenate([self.T.vFire4Exp1,  self.T.vFire4Exp3], axis=1);
+		self.T.vFire4CompAct     = TTN .conv2d     (self.T.vFire3,         self.T.pFire4CompW, None, None, "half", (1,1))
+		self.T.vFire4CompActM    = TT  .mean       (self.T.vFire4CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire4CompActS    = TT  .std        (self.T.vFire4CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire4CompActN    = TTNB.bnorm      (self.T.vFire4CompAct,  self.T.pFire4CompG, self.T.pFire4CompB,
+		                                            self.T.vFire4CompActM, self.T.vFire4CompActS)
+		self.T.vFire4Comp        = TTN .relu       (self.T.vFire4CompActN)
+		self.T.vFire4Exp1Act     = TTN .conv2d     (self.T.vFire4Comp,     self.T.pFire4Exp1W, None, None, "half", (1,1))
+		self.T.vFire4Exp3Act     = TTN .conv2d     (self.T.vFire4Comp,     self.T.pFire4Exp3W, None, None, "half", (1,1))
+		self.T.vFire4ExpAct      = TT  .concatenate([self.T.vFire4Exp1Act, self.T.vFire4Exp1Act], axis=1);
+		self.T.vFire4ExpActM     = TT  .mean       (self.T.vFire4ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire4ExpActS     = TT  .std        (self.T.vFire4ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire4ExpActN     = TTNB.bnorm      (self.T.vFire4ExpAct,   self.T.pFire4ExpG,    self.T.pFire4ExpB,
+		                                            self.T.vFire4ExpActM,  self.T.vFire4ExpActS)
+		self.T.vFire4            = TTN .relu       (self.T.vFire4ExpActN)
 		
 		######################  maxpool4
-		self.T.vMaxpool4     = TTSP.pool_2d    (self.T.vFire4, (3,3), True, (2,2), (1,1), "max")
+		self.T.vMaxpool4         = TTSP.pool_2d    (self.T.vFire4, (3,3), True, (2,2), (1,1), "max")
 		
 		######################  fire5
-		self.T.vFire5CompAct = TTN .conv2d     (self.T.vMaxpool4,    self.T.pFire5CompW, None, None, "half", (1,1)) + self.T.pFire5CompB
-		self.T.vFire5Comp    = TTN .relu       (self.T.vFire5CompAct)
-		self.T.vFire5Exp1Act = TTN .conv2d     (self.T.vFire5Comp,   self.T.pFire5Exp1W, None, None, "half", (1,1)) + self.T.pFire5Exp1B
-		self.T.vFire5Exp1    = TTN .relu       (self.T.vFire5Exp1Act)
-		self.T.vFire5Exp3Act = TTN .conv2d     (self.T.vFire5Comp,   self.T.pFire5Exp3W, None, None, "half", (1,1)) + self.T.pFire5Exp3B
-		self.T.vFire5Exp3    = TTN .relu       (self.T.vFire5Exp3Act)
-		self.T.vFire5        = TT  .concatenate([self.T.vFire5Exp1,  self.T.vFire5Exp3], axis=1);
+		self.T.vFire5CompAct     = TTN .conv2d     (self.T.vMaxpool4,      self.T.pFire5CompW, None, None, "half", (1,1))
+		self.T.vFire5CompActM    = TT  .mean       (self.T.vFire5CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire5CompActS    = TT  .std        (self.T.vFire5CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire5CompActN    = TTNB.bnorm      (self.T.vFire5CompAct,  self.T.pFire5CompG, self.T.pFire5CompB,
+		                                            self.T.vFire5CompActM, self.T.vFire5CompActS)
+		self.T.vFire5Comp        = TTN .relu       (self.T.vFire5CompActN)
+		self.T.vFire5Exp1Act     = TTN .conv2d     (self.T.vFire5Comp,     self.T.pFire5Exp1W, None, None, "half", (1,1))
+		self.T.vFire5Exp3Act     = TTN .conv2d     (self.T.vFire5Comp,     self.T.pFire5Exp3W, None, None, "half", (1,1))
+		self.T.vFire5ExpAct      = TT  .concatenate([self.T.vFire5Exp1Act, self.T.vFire5Exp1Act], axis=1);
+		self.T.vFire5ExpActM     = TT  .mean       (self.T.vFire5ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire5ExpActS     = TT  .std        (self.T.vFire5ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire5ExpActN     = TTNB.bnorm      (self.T.vFire5ExpAct,   self.T.pFire5ExpG,    self.T.pFire5ExpB,
+		                                            self.T.vFire5ExpActM,  self.T.vFire5ExpActS)
+		self.T.vFire5            = TTN .relu       (self.T.vFire5ExpActN)
 		
 		######################  fire6
-		self.T.vFire6CompAct = TTN .conv2d     (self.T.vFire5,       self.T.pFire6CompW, None, None, "half", (1,1)) + self.T.pFire6CompB
-		self.T.vFire6Comp    = TTN .relu       (self.T.vFire6CompAct)
-		self.T.vFire6Exp1Act = TTN .conv2d     (self.T.vFire6Comp,   self.T.pFire6Exp1W, None, None, "half", (1,1)) + self.T.pFire6Exp1B
-		self.T.vFire6Exp1    = TTN .relu       (self.T.vFire6Exp1Act)
-		self.T.vFire6Exp3Act = TTN .conv2d     (self.T.vFire6Comp,   self.T.pFire6Exp3W, None, None, "half", (1,1)) + self.T.pFire6Exp3B
-		self.T.vFire6Exp3    = TTN .relu       (self.T.vFire6Exp3Act)
-		self.T.vFire6        = TT  .concatenate([self.T.vFire6Exp1,  self.T.vFire6Exp3], axis=1);
+		self.T.vFire6CompAct     = TTN .conv2d     (self.T.vFire5,         self.T.pFire6CompW, None, None, "half", (1,1))
+		self.T.vFire6CompActM    = TT  .mean       (self.T.vFire6CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire6CompActS    = TT  .std        (self.T.vFire6CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire6CompActN    = TTNB.bnorm      (self.T.vFire6CompAct,  self.T.pFire6CompG, self.T.pFire6CompB,
+		                                            self.T.vFire6CompActM, self.T.vFire6CompActS)
+		self.T.vFire6Comp        = TTN .relu       (self.T.vFire6CompActN)
+		self.T.vFire6Exp1Act     = TTN .conv2d     (self.T.vFire6Comp,     self.T.pFire6Exp1W, None, None, "half", (1,1))
+		self.T.vFire6Exp3Act     = TTN .conv2d     (self.T.vFire6Comp,     self.T.pFire6Exp3W, None, None, "half", (1,1))
+		self.T.vFire6ExpAct      = TT  .concatenate([self.T.vFire6Exp1Act, self.T.vFire6Exp1Act], axis=1);
+		self.T.vFire6ExpActM     = TT  .mean       (self.T.vFire6ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire6ExpActS     = TT  .std        (self.T.vFire6ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire6ExpActN     = TTNB.bnorm      (self.T.vFire6ExpAct,   self.T.pFire6ExpG,    self.T.pFire6ExpB,
+		                                            self.T.vFire6ExpActM,  self.T.vFire6ExpActS)
+		self.T.vFire6            = TTN .relu       (self.T.vFire6ExpActN)
 		
 		######################  fire7
-		self.T.vFire7CompAct = TTN .conv2d     (self.T.vFire6,       self.T.pFire7CompW, None, None, "half", (1,1)) + self.T.pFire7CompB
-		self.T.vFire7Comp    = TTN .relu       (self.T.vFire7CompAct)
-		self.T.vFire7Exp1Act = TTN .conv2d     (self.T.vFire7Comp,   self.T.pFire7Exp1W, None, None, "half", (1,1)) + self.T.pFire7Exp1B
-		self.T.vFire7Exp1    = TTN .relu       (self.T.vFire7Exp1Act)
-		self.T.vFire7Exp3Act = TTN .conv2d     (self.T.vFire7Comp,   self.T.pFire7Exp3W, None, None, "half", (1,1)) + self.T.pFire7Exp3B
-		self.T.vFire7Exp3    = TTN .relu       (self.T.vFire7Exp3Act)
-		self.T.vFire7        = TT  .concatenate([self.T.vFire7Exp1,  self.T.vFire7Exp3], axis=1);
+		self.T.vFire7CompAct     = TTN .conv2d     (self.T.vFire6,         self.T.pFire7CompW, None, None, "half", (1,1))
+		self.T.vFire7CompActM    = TT  .mean       (self.T.vFire7CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire7CompActS    = TT  .std        (self.T.vFire7CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire7CompActN    = TTNB.bnorm      (self.T.vFire7CompAct,  self.T.pFire7CompG, self.T.pFire7CompB,
+		                                            self.T.vFire7CompActM, self.T.vFire7CompActS)
+		self.T.vFire7Comp        = TTN .relu       (self.T.vFire7CompActN)
+		self.T.vFire7Exp1Act     = TTN .conv2d     (self.T.vFire7Comp,     self.T.pFire7Exp1W, None, None, "half", (1,1))
+		self.T.vFire7Exp3Act     = TTN .conv2d     (self.T.vFire7Comp,     self.T.pFire7Exp3W, None, None, "half", (1,1))
+		self.T.vFire7ExpAct      = TT  .concatenate([self.T.vFire7Exp1Act, self.T.vFire7Exp1Act], axis=1);
+		self.T.vFire7ExpActM     = TT  .mean       (self.T.vFire7ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire7ExpActS     = TT  .std        (self.T.vFire7ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire7ExpActN     = TTNB.bnorm      (self.T.vFire7ExpAct,   self.T.pFire7ExpG,    self.T.pFire7ExpB,
+		                                            self.T.vFire7ExpActM,  self.T.vFire7ExpActS)
+		self.T.vFire7            = TTN .relu       (self.T.vFire7ExpActN)
 		
 		######################  fire8
-		self.T.vFire8CompAct = TTN .conv2d     (self.T.vFire7,       self.T.pFire8CompW, None, None, "half", (1,1)) + self.T.pFire8CompB
-		self.T.vFire8Comp    = TTN .relu       (self.T.vFire8CompAct)
-		self.T.vFire8Exp1Act = TTN .conv2d     (self.T.vFire8Comp,   self.T.pFire8Exp1W, None, None, "half", (1,1)) + self.T.pFire8Exp1B
-		self.T.vFire8Exp1    = TTN .relu       (self.T.vFire8Exp1Act)
-		self.T.vFire8Exp3Act = TTN .conv2d     (self.T.vFire8Comp,   self.T.pFire8Exp3W, None, None, "half", (1,1)) + self.T.pFire8Exp3B
-		self.T.vFire8Exp3    = TTN .relu       (self.T.vFire8Exp3Act)
-		self.T.vFire8        = TT  .concatenate([self.T.vFire8Exp1,  self.T.vFire8Exp3], axis=1);
+		self.T.vFire8CompAct     = TTN .conv2d     (self.T.vFire7,         self.T.pFire8CompW, None, None, "half", (1,1))
+		self.T.vFire8CompActM    = TT  .mean       (self.T.vFire8CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire8CompActS    = TT  .std        (self.T.vFire8CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire8CompActN    = TTNB.bnorm      (self.T.vFire8CompAct,  self.T.pFire8CompG, self.T.pFire8CompB,
+		                                            self.T.vFire8CompActM, self.T.vFire8CompActS)
+		self.T.vFire8Comp        = TTN .relu       (self.T.vFire8CompActN)
+		self.T.vFire8Exp1Act     = TTN .conv2d     (self.T.vFire8Comp,     self.T.pFire8Exp1W, None, None, "half", (1,1))
+		self.T.vFire8Exp3Act     = TTN .conv2d     (self.T.vFire8Comp,     self.T.pFire8Exp3W, None, None, "half", (1,1))
+		self.T.vFire8ExpAct      = TT  .concatenate([self.T.vFire8Exp1Act, self.T.vFire8Exp1Act], axis=1);
+		self.T.vFire8ExpActM     = TT  .mean       (self.T.vFire8ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire8ExpActS     = TT  .std        (self.T.vFire8ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire8ExpActN     = TTNB.bnorm      (self.T.vFire8ExpAct,   self.T.pFire8ExpG,    self.T.pFire8ExpB,
+		                                            self.T.vFire8ExpActM,  self.T.vFire8ExpActS)
+		self.T.vFire8            = TTN .relu       (self.T.vFire8ExpActN)
 		
 		######################  maxpool8
-		self.T.vMaxpool8     = TTSP.pool_2d    (self.T.vFire8, (3,3), True, (2,2), (1,1), "max")
+		self.T.vMaxpool8         = TTSP.pool_2d    (self.T.vFire8, (3,3), True, (2,2), (1,1), "max")
 		
 		######################  fire9
-		self.T.vFire9CompAct = TTN .conv2d     (self.T.vMaxpool8,    self.T.pFire9CompW, None, None, "half", (1,1)) + self.T.pFire9CompB
-		self.T.vFire9Comp    = TTN .relu       (self.T.vFire9CompAct)
-		self.T.vFire9Exp1Act = TTN .conv2d     (self.T.vFire9Comp,   self.T.pFire9Exp1W, None, None, "half", (1,1)) + self.T.pFire9Exp1B
-		self.T.vFire9Exp1    = TTN .relu       (self.T.vFire9Exp1Act)
-		self.T.vFire9Exp3Act = TTN .conv2d     (self.T.vFire9Comp,   self.T.pFire9Exp3W, None, None, "half", (1,1)) + self.T.pFire9Exp3B
-		self.T.vFire9Exp3    = TTN .relu       (self.T.vFire9Exp3Act)
-		self.T.vFire9        = TT  .concatenate([self.T.vFire9Exp1,  self.T.vFire9Exp3], axis=1);
+		self.T.vFire9CompAct     = TTN .conv2d     (self.T.vMaxpool8,      self.T.pFire9CompW, None, None, "half", (1,1))
+		self.T.vFire9CompActM    = TT  .mean       (self.T.vFire9CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire9CompActS    = TT  .std        (self.T.vFire9CompAct,  axis=(0,2,3), keepdims=1)
+		self.T.vFire9CompActN    = TTNB.bnorm      (self.T.vFire9CompAct,  self.T.pFire9CompG, self.T.pFire9CompB,
+		                                            self.T.vFire9CompActM, self.T.vFire9CompActS)
+		self.T.vFire9Comp        = TTN .relu       (self.T.vFire9CompActN)
+		self.T.vFire9Exp1Act     = TTN .conv2d     (self.T.vFire9Comp,     self.T.pFire9Exp1W, None, None, "half", (1,1))
+		self.T.vFire9Exp3Act     = TTN .conv2d     (self.T.vFire9Comp,     self.T.pFire9Exp3W, None, None, "half", (1,1))
+		self.T.vFire9ExpAct      = TT  .concatenate([self.T.vFire9Exp1Act, self.T.vFire9Exp1Act], axis=1);
+		self.T.vFire9ExpActM     = TT  .mean       (self.T.vFire9ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire9ExpActS     = TT  .std        (self.T.vFire9ExpAct,   axis=(0,2,3), keepdims=1)
+		self.T.vFire9ExpActN     = TTNB.bnorm      (self.T.vFire9ExpAct,   self.T.pFire9ExpG,    self.T.pFire9ExpB,
+		                                            self.T.vFire9ExpActM,  self.T.vFire9ExpActS)
+		self.T.vFire9            = TTN .relu       (self.T.vFire9ExpActN)
 		
 		######################  conv10
-		self.T.vConv10Act    = TTN .conv2d     (self.T.vFire9,       self.T.pConv10W,    None, None, "half", (1,1)) + self.T.pConv10B
-		self.T.vConv10       = TTN .relu       (self.T.vConv10Act)
+		self.T.vConv10Act        = TTN .conv2d     (self.T.vFire9,         self.T.pConv10W,    None, None, "half", (1,1))
+		self.T.vConv10ActM       = TT  .mean       (self.T.vConv10Act,     axis=(0,2,3), keepdims=1)
+		self.T.vConv10ActS       = TT  .std        (self.T.vConv10Act,     axis=(0,2,3), keepdims=1)
+		self.T.vConv10ActN       = TTNB.bnorm      (self.T.vConv10Act,     self.T.pConv10G, self.T.pConv10B,
+		                                            self.T.vConv10ActM,    self.T.vConv10ActS)
+		self.T.vConv10           = TTN .relu       (self.T.vConv10ActN)
 		
 		######################  avgpool10
-		self.T.vAvgpool10    = TTSP.pool_2d    (self.T.vConv10, (12,12), True, (1,1), (0,0), "average_exc_pad")
+		self.T.vAvgpool10        = TTSP.pool_2d    (self.T.vConv10, (12,12), True, (1,1), (0,0), "average_exc_pad")
 		
 		######################  Softmax
-		self.T.vSMi          = self.T.vAvgpool10
-		self.T.vSMm          = self.T.vSMi - TT.max(self.T.vSMi, axis=1, keepdims=1)
-		self.T.vSMu          = TT.exp(self.T.vSMm)
-		self.T.vSMn          = TT.sum(self.T.vSMu, axis=1, keepdims=1)
-		self.T.vSM           = self.T.vSMu / self.T.vSMn
+		self.T.vSMi              = self.T.vAvgpool10
+		self.T.vSMm              = self.T.vSMi - TT.max(self.T.vSMi, axis=1, keepdims=1)
+		self.T.vSMu              = TT.exp(self.T.vSMm)
+		self.T.vSMn              = TT.sum(self.T.vSMu, axis=1, keepdims=1)
+		self.T.vSM               = self.T.vSMu / self.T.vSMn
 		
 		######################  Output layer
-		self.T.oy           = self.T.vSM
+		self.T.oy                = self.T.vSM
 		
 		# Function creation
-		self.T.classf       = T.function(inputs=[self.T.ix], outputs=[self.T.oy], name="classification-function")
+		self.T.classf            = T.function(inputs=[self.T.ix], outputs=[self.T.oy], name="classification-function")
 		
 		# Return
 		return self.T.classf
