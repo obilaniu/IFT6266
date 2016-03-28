@@ -492,7 +492,7 @@ class KITNNTrainer(Object):
 		# Initialize a few objects and constants to default values.
 		self.D             = dataset
 		self.kTB           = 50
-		self.kCB           = 500
+		self.kCB           = 250
 		
 		# Initialize the mutable state of the trainer.
 		self.cc            = KITNN_TRAIN_ENTRY_POINT
@@ -669,7 +669,7 @@ class KITNNTrainer(Object):
 	# Construct Theano shared variables.
 	#
 	
-	def constructTheanoSVs(self, l1Penalty=0.0002, l2Penalty=0.000002, momentum=0.9, learningRate=0.01):
+	def constructTheanoSVs(self, l1Penalty=0.0002, l2Penalty=0.0002, momentum=0.9, learningRate=0.01):
 		# Velocities
 		for (name, desc) in KITNN.PARAMS_DICT.iteritems():
 			value         = np.zeros(desc["shape"], desc["dtype"])
