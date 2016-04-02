@@ -32,8 +32,7 @@ using namespace cv;
 hid_t openHDF5File(const char* destFile){
 	/* Want large datasets aligned on MB boundaries. */
 	hid_t plist = H5Pcreate(H5P_FILE_ACCESS);
-	H5Pset_alignment(plist, 16U<<10,  4U<<10);
-	H5Pset_alignment(plist, 64U<<20, 16U<<20);
+	H5Pset_alignment(plist,  4U<<10,  1U<<20);
 	
 	/* Create file with given alignment configurations. */
 	hid_t f     = H5Fcreate(destFile, H5F_ACC_EXCL, H5P_DEFAULT, plist);
@@ -385,8 +384,8 @@ int  processY(hid_t f){
 int main(int argc, char* argv[]){
 	/* Check argument */
 	if(argc != 3){
-		printf("Please provide the path to the train directory as the first"
-		       "argument,\nand a target file as the second argument.\n");
+		printf("Please provide the path to the train directory as the first "
+		       "argument, and a target\nfile as the second argument.\n");
 		return -1;
 	}
 	
