@@ -331,6 +331,7 @@ void imgsConnSampleH(CONN_CTX* connCtx,
 	double Ty = imgsConnRandom(connCtx, -maxT, +maxT);
 	double R  = imgsConnRandom(connCtx, -maxR, +maxR) / (180.0/3.14159265358979323846483373);
 	double S  = imgsConnRandom(connCtx,  minS,  maxS);
+	double Fl = imgsConnRandom(connCtx,     0,     1) < 0.5 ? -1.0 : 1.0;
 	double c  = cos(R);
 	double s  = sin(R);
 	
@@ -360,7 +361,7 @@ void imgsConnSampleH(CONN_CTX* connCtx,
 	    0.0, 0.0, +1.0
 	};
 	double InvScal[3][3] = {
-	    S,   0.0, 0.0,
+	 Fl*S,   0.0, 0.0,
 	    0.0, S,   0.0,
 	    0.0, 0.0, 1.0
 	};
@@ -651,7 +652,6 @@ CONN_CTX* imgsConnAccept(GLOBAL_DATA* gData){
 	                                (sockaddr*)&connCtx->remoteAddr,
 	                                &connCtx->remoteAddrLen);
 	if(connCtx->sockFd < 0){
-		printf("Server socket failed!\n");
 		free(connCtx);
 		return NULL;
 	}else{
@@ -2930,22 +2930,30 @@ uint64_t imgsConnSelectImage(GLOBAL_DATA* gData,
 	    24683, 1638, 7892, 22411, 10128
 	};
 	
-	/* Useful constants */
-	const uint64_t B = pkt->batchSize;
-	
 	/**
 	 * Do we want:
 	 * req==0: Random selection
 	 * req==1: Sequential selection
 	 */
 	
-	if      (pkt->req == 0){
-		uint64_t n = imgsConnRandom(connCtx, pkt->first, pkt->last);
-		return SPLIT[n];
+	uint64_t n=0;
+	if(pkt->req == 0){
+		do{
+			n = imgsConnRandom(connCtx, pkt->first, pkt->last);
+			n = SPLIT[n];
+		}while(n == 24876 || /* Non-dog, non-cat */
+		       n == 10360 || /* Dupe */
+		       n == 15582 || /* Dupe */
+		       n == 22901 || /* Dupe */
+		       n == 23297 || /* Dupe */
+		       n ==  6204 || /* Dupe */
+		       n ==  2339 ); /* Dupe */
 	}else if(pkt->req == 1){
-		uint64_t n = pkt->first + i;
-		return SPLIT[n];
+		n = pkt->first + i;
+		n = SPLIT[n];
 	}
+	
+	return n;
 }
 
 /**
