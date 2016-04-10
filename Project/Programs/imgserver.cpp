@@ -91,19 +91,13 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#if OCVDISP
 #include <opencv2/core/core.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#endif
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include <npp.h>
 
 
 
 /* Defines */
-#define OCL_INTEL_PLATFORM    "Intel"
-#define OCL_INTEL_DEVICE      "Intel(R) HD Graphics Haswell GT2 Mobile"
 #define DEFAULT_PORT          (5555)
 
 
@@ -136,12 +130,6 @@ typedef struct{
 	uint8_t          (*dataX_64x64)  [3][ 64][ 64];
 	uint8_t          (*dataX_128x128)[3][128][128];
 	uint8_t          (*dataX_256x256)[3][256][256];
-	
-	/* CUDA */
-	float            (*devDataY)[2];
-	Npp8u            (*devDataX_64x64)  [3][ 64][ 64];
-	Npp8u            (*devDataX_128x128)[3][128][128];
-	Npp8u            (*devDataX_256x256)[3][256][256];
 } GLOBAL_DATA;
 
 /**
@@ -154,9 +142,6 @@ typedef struct{
 	
 	/* Config */
 	uint64_t         xorshift128p[2];
-	
-	/* CUDA */
-	void*            devBounceBuf;
 	
 	/* Network locals */
 	int              sockFd;
@@ -173,8 +158,6 @@ typedef struct{
 	uint64_t           batchSize;    /* 0x08 */
 	uint64_t           first;        /* 0x10 */
 	uint64_t           last;         /* 0x18 */
-	cudaIpcMemHandle_t Y;            /* 0x20 */
-	cudaIpcMemHandle_t X;            /* 0x60 */
 	uint64_t           sizeIn;       /* 0xA0 */
 	uint64_t           sizeOut;      /* 0xA8 */
 	uint64_t           x128ps0;      /* 0xB0 */
@@ -197,8 +180,6 @@ int       imgsNetworkSetup(GLOBAL_DATA* gData);
 void      imgsNetworkTeardown(GLOBAL_DATA* gData);
 int       imgsDataSetup(GLOBAL_DATA* gData);
 void      imgsDataTeardown(GLOBAL_DATA* gData);
-int       imgsCUDASetup(GLOBAL_DATA* gData);
-void      imgsCUDATeardown(GLOBAL_DATA* gData);
 CONN_CTX* imgsConnAlloc(GLOBAL_DATA* gData);
 CONN_CTX* imgsConnAccept(GLOBAL_DATA* gData);
 int       imgsConnSetup(GLOBAL_DATA* gData, CONN_CTX* connCtx);
@@ -379,6 +360,25 @@ void imgsConnSampleH(CONN_CTX* connCtx,
 	mmulH(H, H,        TranT);
 }
 
+/**
+ * Write *all* of the requested data until done or an error happens.
+ */
+
+ssize_t writeAll(int fd, const void* buf, size_t n){
+	ssize_t bWT = 0, bW;
+	
+	while(bWT < n){
+		bW = write(fd, (const char*)buf+bWT, n-bWT);
+		if(bW <= 0){
+			return -1;
+		}
+		
+		bWT += bW;
+	}
+	
+	return bWT;
+}
+
 
 /********************* Global network code ***********************/
 
@@ -547,57 +547,6 @@ void imgsDataTeardown(GLOBAL_DATA* gData){
 }
 
 
-/********************** Global CUDA code *************************/
-
-/**
- * Setup CUDA
- */
-
-int  imgsCUDASetup(GLOBAL_DATA* gData){
-	int devNum = 0;
-	
-	/* Select the device */
-	if(cudaSetDevice(devNum) != cudaSuccess){
-		printf("Could not select NVIDIA device %d!\n", devNum);
-		return -1;
-	}else{
-		cudaDeviceProp devProp;
-		cudaGetDeviceProperties(&devProp, devNum);
-		printf("Selected NVIDIA device %d (%s).\n", devNum, devProp.name);
-		
-	}
-	
-	/* Page-lock and memory-map the HDF5 file into the GPU's address space. */
-	if(cudaHostRegister(gData->dataPtr,
-	                    gData->dataFileLen,
-	                    cudaHostRegisterMapped | cudaHostRegisterPortable) != cudaSuccess){
-		printf("Could not map dataset into GPU memory!\n->\t%s\n", cudaGetErrorString(cudaGetLastError()));
-		return -1;
-	}
-	
-	/* Get the device's pointers for the datasets. */
-	if(cudaHostGetDevicePointer((void**)&gData->devDataY,         (void*)gData->dataY,         0) != cudaSuccess ||
-	   cudaHostGetDevicePointer((void**)&gData->devDataX_64x64,   (void*)gData->dataX_64x64,   0) != cudaSuccess ||
-	   cudaHostGetDevicePointer((void**)&gData->devDataX_128x128, (void*)gData->dataX_128x128, 0) != cudaSuccess ||
-	   cudaHostGetDevicePointer((void**)&gData->devDataX_256x256, (void*)gData->dataX_256x256, 0) != cudaSuccess){
-		printf("Error getting device pointers!\n");
-		return -1;
-	}
-	
-	return 0;
-}
-
-/**
- * Tear down CUDA
- */
-
-void imgsCUDATeardown(GLOBAL_DATA* gData){
-	cudaDeviceSynchronize();
-	cudaHostUnregister(gData->dataPtr);
-	cudaDeviceReset();
-}
-
-
 /********************* Per-connection code ***********************/
 
 /**
@@ -647,7 +596,6 @@ CONN_CTX* imgsConnAccept(GLOBAL_DATA* gData){
 	/**
 	 * Accept a new connection.
 	 */
-#if 1
 	connCtx->sockFd        = accept(gData->ssockFd,
 	                                (sockaddr*)&connCtx->remoteAddr,
 	                                &connCtx->remoteAddrLen);
@@ -660,7 +608,6 @@ CONN_CTX* imgsConnAccept(GLOBAL_DATA* gData){
 		printf("Received new connection from %u.%u.%u.%u:%u\n",
 		       addr[0], addr[1], addr[2], addr[3], port);
 	}
-#endif
 	
 	return connCtx;
 }
@@ -670,13 +617,6 @@ CONN_CTX* imgsConnAccept(GLOBAL_DATA* gData){
  */
 
 int  imgsConnSetup(GLOBAL_DATA* gData, CONN_CTX* connCtx){
-	/* Allocate bounce buffer */
-	if(cudaMalloc((void**)&connCtx->devBounceBuf, 3*256*256) != cudaSuccess){
-		printf("Error allocating device bounce buffer!\n");
-		return -1;
-	}
-	
-	
 	return 0;
 }
 
@@ -685,13 +625,7 @@ int  imgsConnSetup(GLOBAL_DATA* gData, CONN_CTX* connCtx){
  */
 
 void imgsConnHandlePacket(GLOBAL_DATA* gData, CONN_CTX* connCtx){
-	/**
-	__host__ ​cudaError_t cudaIpcCloseMemHandle ( void* devPtr )
-	    Close memory mapped with cudaIpcOpenMemHandle. 
-	__host__ ​cudaError_t cudaIpcOpenMemHandle ( void** devPtr, cudaIpcMemHandle_t handle, unsigned int  flags )
-	    Opens an interprocess memory handle exported from another process and returns a device pointer usable in the local process
-	 */
-	
+	int i;
 	
 	/* Read the packet. */
 	CONN_PKT pkt;
@@ -716,76 +650,89 @@ void imgsConnHandlePacket(GLOBAL_DATA* gData, CONN_CTX* connCtx){
 		imgsConnWantExit(connCtx);return;
 	}
 	
-	/* Attempt to obtain pointers for X and Y */
-	void* devX = NULL, *devY = NULL;
-	if(cudaIpcOpenMemHandle(&devX, pkt.X, cudaIpcMemLazyEnablePeerAccess) != cudaSuccess ||
-	   cudaIpcOpenMemHandle(&devY, pkt.Y, cudaIpcMemLazyEnablePeerAccess) != cudaSuccess){
-		cudaIpcCloseMemHandle(devX);
-		cudaIpcCloseMemHandle(devY);
-		printf("Failed to open IPC memory handles.\n");
-		imgsConnWantExit(connCtx);return;
-	}
-	
-	/* Wipe target buffer X */
-	cudaMemsetAsync(devX, 0, pkt.batchSize*3*pkt.sizeOut*pkt.sizeOut, cudaStreamDefault);
-	
-	/* Precomputed work before warping starts... */
-	NppiSize srcSize          = {      (int)pkt.sizeIn,  (int)pkt.sizeIn};
-	NppiRect srcROI           = {0, 0, (int)pkt.sizeIn,  (int)pkt.sizeIn};
-	NppiRect dstROI           = {0, 0, (int)pkt.sizeOut, (int)pkt.sizeOut};
-	const Npp8u* srcPlanes[3] = {(const Npp8u*)connCtx->devBounceBuf + 0*pkt.sizeIn*pkt.sizeIn,
-	                             (const Npp8u*)connCtx->devBounceBuf + 1*pkt.sizeIn*pkt.sizeIn,
-	                             (const Npp8u*)connCtx->devBounceBuf + 2*pkt.sizeIn*pkt.sizeIn};
-	Npp8u*       dstPlanes[3] = {NULL, NULL, NULL};
-	double H[3][3]            = {{1,0,0},{0,1,0},{0,0,1}};
-	int i;
+	/* Shortcut constants. */
+	const uint64_t B  = pkt.batchSize,
+	               Wi = pkt.sizeIn,
+	               Hi = pkt.sizeIn,
+	               Wo = pkt.sizeOut,
+	               Ho = pkt.sizeOut;
 	
 	/**
-	 * Loop over images, loading them into the bounce buffer and warping
-	 * them from there to their destination.
+	 * Allocate buffers.
 	 */
 	
-	for(i=0;i<pkt.batchSize;i++){
+	float* X = (float*)malloc(B*3*Ho*Wo * sizeof(float));
+	float* Y = (float*)malloc(B*2 * sizeof(float));
+	
+	/**
+	 * Loop over images, warping them and converting them to float.
+	 */
+	
+	for(i=0;i<B;i++){
+		using namespace cv;
+		
+		/* Variables. */
+		Mat H = Mat::eye(3,3,CV_64FC1);
+		Mat inR, outR, inG, outG, inB, outB;
+		
 		/* Select image according to some policy. */
-		uint64_t n = imgsConnSelectImage(gData, connCtx, &pkt, i);/* Select some image somehow. */
-		
-		/* Copy selected image to GPU. */
-		if(pkt.sizeIn == 64){
-			cudaMemcpyAsync(connCtx->devBounceBuf, (void*)&gData->devDataX_64x64[n],
-			                3* 64* 64, cudaMemcpyHostToDevice, cudaStreamDefault);
-		}else if(pkt.sizeIn == 128){
-			cudaMemcpyAsync(connCtx->devBounceBuf, (void*)&gData->devDataX_128x128[n],
-			                3*128*128, cudaMemcpyHostToDevice, cudaStreamDefault);
-		}else if(pkt.sizeIn == 256){
-			cudaMemcpyAsync(connCtx->devBounceBuf, (void*)&gData->devDataX_256x256[n],
-			                3*256*256, cudaMemcpyHostToDevice, cudaStreamDefault);
-		}
-		
-		/* Memcpy label information into devY */
-		cudaMemcpyAsync((void*)(&((float(*)[2])devY)[i]), (void*)&gData->devDataY[n],
-		                2*sizeof(float), cudaMemcpyHostToDevice, cudaStreamDefault);
+		uint64_t n = imgsConnSelectImage(gData, connCtx, &pkt, i);
 		
 		/* Sample a homography from the selected parameters. */
-		imgsConnSampleH(connCtx, H, pkt.maxT, pkt.maxR, pkt.minS, pkt.maxS,
-		                pkt.sizeIn, pkt.sizeOut);
+		imgsConnSampleH(connCtx, (double(*)[3])H.data, pkt.maxT, pkt.maxR,
+		                pkt.minS, pkt.maxS, pkt.sizeIn, pkt.sizeOut);
 		
-		/* Compute destination plane pointers into devX. */
-		dstPlanes[0] = (Npp8u*)devX + (3*i+0)*pkt.sizeOut*pkt.sizeOut;
-		dstPlanes[1] = (Npp8u*)devX + (3*i+1)*pkt.sizeOut*pkt.sizeOut;
-		dstPlanes[2] = (Npp8u*)devX + (3*i+2)*pkt.sizeOut*pkt.sizeOut;
+		/* Select source images. */
+		if(pkt.sizeIn == 64){
+			inR = Mat(Hi, Wi, CV_8UC1, &gData->dataX_64x64[n][0]);
+			inG = Mat(Hi, Wi, CV_8UC1, &gData->dataX_64x64[n][1]);
+			inB = Mat(Hi, Wi, CV_8UC1, &gData->dataX_64x64[n][2]);
+		}else if(pkt.sizeIn == 128){
+			inR = Mat(Hi, Wi, CV_8UC1, &gData->dataX_128x128[n][0]);
+			inG = Mat(Hi, Wi, CV_8UC1, &gData->dataX_128x128[n][1]);
+			inB = Mat(Hi, Wi, CV_8UC1, &gData->dataX_128x128[n][2]);
+		}else if(pkt.sizeIn == 256){
+			inR = Mat(Hi, Wi, CV_8UC1, &gData->dataX_256x256[n][0]);
+			inG = Mat(Hi, Wi, CV_8UC1, &gData->dataX_256x256[n][1]);
+			inB = Mat(Hi, Wi, CV_8UC1, &gData->dataX_256x256[n][2]);
+		}
 		
-		/* Perform image warping into devX */
-		nppiWarpPerspective_8u_P3R(srcPlanes, srcSize,     pkt.sizeIn, srcROI,
-		                           dstPlanes, pkt.sizeOut, dstROI,     H,
-		                           NPPI_INTER_LINEAR);
+		/* Warp them. */
+		warpPerspective(inR, outR, H, Size(Ho, Wo), CV_INTER_LINEAR);
+		warpPerspective(inG, outG, H, Size(Ho, Wo), CV_INTER_LINEAR);
+		warpPerspective(inB, outB, H, Size(Ho, Wo), CV_INTER_LINEAR);
+		
+		/* Convert them. */
+		Mat fR = Mat(Ho, Wo, CV_32FC1, X+(3*i+0)*Ho*Wo),
+		    fG = Mat(Ho, Wo, CV_32FC1, X+(3*i+1)*Ho*Wo),
+		    fB = Mat(Ho, Wo, CV_32FC1, X+(3*i+2)*Ho*Wo);
+		outR.convertTo(fR, CV_32FC1, 1.0/255, 0);
+		outG.convertTo(fG, CV_32FC1, 1.0/255, 0);
+		outB.convertTo(fB, CV_32FC1, 1.0/255, 0);
+		Y[2*i+0] = gData->dataY[n][0];
+		Y[2*i+1] = gData->dataY[n][1];
+		/*
+		imshow("fR", fR);
+		imshow("fG", fG);
+		imshow("fB", fB);
+		waitKey();
+		destroyAllWindows();
+		*/
 	}
 	
-	/* Close the memory handles. */
-	cudaIpcCloseMemHandle(devX);
-	cudaIpcCloseMemHandle(devY);
+	/* Write them. */
+	ssize_t bWX = writeAll(connCtx->sockFd, X, B*3*Ho*Wo * sizeof(float));
+	ssize_t bWY = writeAll(connCtx->sockFd, Y, B*2 * sizeof(float));
 	
-	/* Ping 1 byte back to the remote side to ACK */
-	write(connCtx->sockFd, "\0", 1);
+	/* Free memory */
+	free(X);
+	free(Y);
+	
+	if(bWX < 0 || bWY < 0){
+		printf("Failed to write out results!\n");
+		fflush(stdout);
+		imgsConnWantExit(connCtx);return;
+	}
 }
 
 /**
@@ -2981,7 +2928,6 @@ void imgsConnTeardown(GLOBAL_DATA* gData, CONN_CTX* connCtx){
 	unsigned       port = htons(connCtx->remoteAddr.sin_port);
 	printf("Closing connection from %u.%u.%u.%u:%u\n",
 	       addr[0], addr[1], addr[2], addr[3], port);
-	cudaFree(connCtx->devBounceBuf);
 	close(connCtx->sockFd);
 }
 
@@ -3068,12 +3014,6 @@ int  imgsGlobalSetup(GLOBAL_DATA* gData){
 		return -1;
 	}
 	
-	/* Setup CUDA. Must happen after HDF5 data load. */
-	if(imgsCUDASetup(gData) < 0){
-		printf("Failure in CUDA setup!\n");
-		return -1;
-	}
-	
 	return 0;
 }
 
@@ -3084,7 +3024,6 @@ int  imgsGlobalSetup(GLOBAL_DATA* gData){
 void imgsGlobalTeardown(GLOBAL_DATA* gData){
 	if(gData->exiting == 0){
 		gData->exiting = 1;
-		imgsCUDATeardown(gData);
 		imgsDataTeardown(gData);
 		imgsNetworkTeardown(gData);
 		gData->exiting = 2;
