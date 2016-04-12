@@ -637,8 +637,8 @@ void imgsConnHandlePacket(GLOBAL_DATA* gData, CONN_CTX* connCtx){
 	if(pkt.batchSize ==     0  ||
 	   pkt.first     <      0  ||
 	   pkt.first     >= 25000  ||
-	   pkt.last      <      0  ||
-	   pkt.last      >= 25000  ||
+	   pkt.last      <=     0  ||
+	   pkt.last      >  25000  ||
 	   (pkt.sizeIn   !=  64    &&
 	    pkt.sizeIn   != 128    &&
 	    pkt.sizeIn   != 256)){
@@ -668,6 +668,7 @@ void imgsConnHandlePacket(GLOBAL_DATA* gData, CONN_CTX* connCtx){
 	 * Loop over images, warping them and converting them to float.
 	 */
 	
+#pragma omp parallel for schedule(dynamic, 1) num_threads(8) private(i)
 	for(i=0;i<B;i++){
 		using namespace cv;
 		
@@ -706,9 +707,9 @@ void imgsConnHandlePacket(GLOBAL_DATA* gData, CONN_CTX* connCtx){
 		Mat fR = Mat(Ho, Wo, CV_32FC1, X+(3*i+0)*Ho*Wo),
 		    fG = Mat(Ho, Wo, CV_32FC1, X+(3*i+1)*Ho*Wo),
 		    fB = Mat(Ho, Wo, CV_32FC1, X+(3*i+2)*Ho*Wo);
-		outR.convertTo(fR, CV_32FC1, 1.0/255, 0);
-		outG.convertTo(fG, CV_32FC1, 1.0/255, 0);
-		outB.convertTo(fB, CV_32FC1, 1.0/255, 0);
+		outR.convertTo(fR, CV_32FC1, 2.0/255, -1.0);
+		outG.convertTo(fG, CV_32FC1, 2.0/255, -1.0);
+		outB.convertTo(fB, CV_32FC1, 2.0/255, -1.0);
 		Y[2*i+0] = gData->dataY[n][0];
 		Y[2*i+1] = gData->dataY[n][1];
 		/*
