@@ -49,7 +49,6 @@ import keras                                as K
 import keras.callbacks                      as KC
 import keras.layers                         as KL
 import keras.layers.advanced_activations    as KLAa
-import keras.layers.containers              as KLCn
 import keras.layers.convolutional           as KLCv
 import keras.layers.core                    as KLCo
 import keras.layers.normalization           as KLN
@@ -494,22 +493,22 @@ class KITNNTrainer(Object):
 		#opt      = KO.RMSprop ()
 		#opt      = KO.Adagrad ()
 		#opt      = KO.Adadelta()
-		opt      = KO.Adam    (lr=baseLr, beta_1=0.9, beta_2=0.999, epsilon=1e-8, clipvalue=5)
+		opt      = KO.Adam    (lr=baseLr, beta_1=0.9, beta_2=0.999, epsilon=1e-8, clipvalue=1)
 		#opt      = KO.Adamax  (lr=0.002, beta_1=0.9, beta_2=0.999, epsilon=1e-8)
 		
 		opt.baseLr  = baseLr
-		opt.lrDecay = 0.85
+		opt.lrDecay = 0.97
 		
 		############### Structural #################
-		f1     =  48;
-		f2_s1  =  16; f2_e1 =  32; f2_e3 =  32;
-		f3_s1  =  16; f3_e1 =  32; f3_e3 =  32;
-		f4_s1  =  32; f4_e1 =  64; f4_e3 =  64;
-		f5_s1  =  32; f5_e1 =  64; f5_e3 =  64;
-		f6_s1  =  48; f6_e1 =  96; f6_e3 =  96;
-		f7_s1  =  48; f7_e1 =  96; f7_e3 =  96;
-		f8_s1  =  64; f8_e1 = 128; f8_e3 = 128;
-		f9_s1  =  64; f9_e1 = 128; f9_e3 = 128;
+		f1     =  96;
+		f2_s1  =  32; f2_e1 = 128; f2_e3 = 128;
+		f3_s1  =  32; f3_e1 = 128; f3_e3 = 128;
+		f4_s1  =  32; f4_e1 = 128; f4_e3 = 128;
+		f5_s1  =  32; f5_e1 = 128; f5_e3 = 128;
+		f6_s1  =  48; f6_e1 = 192; f6_e3 = 192;
+		f7_s1  =  48; f7_e1 = 192; f7_e3 = 192;
+		f8_s1  =  64; f8_e1 = 256; f8_e3 = 256;
+		f9_s1  =  64; f9_e1 = 256; f9_e3 = 256;
 		f10    =   2;
 		
 		############### Model         #################
@@ -518,6 +517,10 @@ class KITNNTrainer(Object):
 		model.add_input ("input",  (3,192,192), (50,3,192,192))
 		model.add_node  (KLCv.AveragePooling2D  ((2,2), (2,2), "valid"),                              "input_medium",       input="input")
 		model.add_node  (KLCv.AveragePooling2D  ((2,2), (2,2), "valid"),                              "input_coarse",       input="input_medium")
+		
+		#model.add_node  (KLCo.Dropout           (0.5),                                                "dropout_input_fine",   input="input")
+		#model.add_node  (KLCo.Dropout           (0.5),                                                "dropout_input_medium", input="input_medium")
+		#model.add_node  (KLCo.Dropout           (0.5),                                                "dropout_input_coarse", input="input_coarse")
 		
 		model.add_node  (KLCv.Convolution2D     (f1,    7, 7, border_mode="same", subsample=(1,1), init=convInit, W_regularizer=reg),   "conv1_fine/act",     input="input")
 		model.add_node  (KLCv.Convolution2D     (f1,    7, 7, border_mode="same", subsample=(1,1), init=convInit, W_regularizer=reg),   "conv1_medium/act",   input="input_medium")
@@ -544,7 +547,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f3_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire3/exp3/act",     input="fire3/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire3/exp/out",      inputs=["fire3/exp1/act", "fire3/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f4_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/comp/act",     input="fire3/exp/out")
+		model.add_node  (KLCv.Convolution2D     (f4_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/comp/act",     inputs=["fire2/exp/out", "fire3/exp/out"], merge_mode="sum")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn4c/out",           input="fire4/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire4/comp/out",     input="bn4c/out")
 		model.add_node  (KLCv.Convolution2D     (f4_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/exp1/act",     input="fire4/comp/out")
@@ -560,7 +563,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f5_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire5/exp3/act",     input="fire5/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire5/exp/out",      inputs=["fire5/exp1/act", "fire5/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f6_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/comp/act",     input="fire5/exp/out")
+		model.add_node  (KLCv.Convolution2D     (f6_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/comp/act",     inputs=["maxpool4/out", "fire5/exp/out"], merge_mode="sum")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn6c/out",           input="fire6/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire6/comp/out",     input="bn6c/out")
 		model.add_node  (KLCv.Convolution2D     (f6_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/exp1/act",     input="fire6/comp/out")
@@ -574,7 +577,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f7_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire7/exp3/act",     input="fire7/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire7/exp/out",      inputs=["fire7/exp1/act", "fire7/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f8_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/comp/act",     input="fire7/exp/out")
+		model.add_node  (KLCv.Convolution2D     (f8_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/comp/act",     inputs=["fire6/exp/out", "fire7/exp/out"], merge_mode="sum")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn8c/out",           input="fire8/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire8/comp/out",     input="bn8c/out")
 		model.add_node  (KLCv.Convolution2D     (f8_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/exp1/act",     input="fire8/comp/out")
@@ -590,7 +593,9 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f9_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire9/exp3/act",     input="fire9/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire9/exp/out",      inputs=["fire9/exp1/act", "fire9/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f10  , 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "conv10/act",         input="fire9/exp/out")
+		model.add_node  (KLCo.Dropout           (0.5),                                                "dropout9/out",       inputs=["maxpool8/out", "fire9/exp/out"], merge_mode="sum")
+		
+		model.add_node  (KLCv.Convolution2D     (f10  , 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "conv10/act",         input="dropout9/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn10/out",           input="conv10/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "conv10/out",         input="bn10/out")
 		
@@ -719,7 +724,7 @@ class KITNNTrainer(Object):
 		
 		return mC
 	def shouldTTSnap(self):
-		return True
+		return False
 	def shouldCTSnap(self):
 		return False
 	def shouldCVSnap(self):
@@ -813,7 +818,7 @@ def KTTrainOverTrainLoop(cc):
 		
 		ts = time.time()
 		
-		s  = np.random.randint(1, 2**64, (2,), "uint64")
+		s  = np.random.randint(1, 2**62, (2,)).astype("uint64")
 		#                  Socket,  Rq#, B,      first,   last,  sizeIn, sizeOut, x128+s0, x128+s1, maxT, maxR, minS, maxS
 		X, Y = KNFetchImgs(cc.sock, 0,   cc.kTB, 0,       22500, 256,    192,     s[0],    s[1],    16,   60,   0.8,  1.2)
 		Y = KHintonTrick(Y, c=0)
@@ -851,7 +856,6 @@ def KTCheckOverTrainLoop(cc):
 		#                  Socket,  Rq#, B,      first,   last,           sizeIn, sizeOut, x128+s0, x128+s1, maxT, maxR, minS, maxS
 		X, Y = KNFetchImgs(cc.sock, 1,   cc.kCB, cc.mCTI, cc.mCTI+cc.kCB, 256,    192,     1,       1,       0,    0,    1.0,  1.0)
 		YEst   = cc.model.predict({"input":X})["output"]
-		
 		yDiff  = np.argmax(Y, axis=1) != np.argmax(YEst, axis=1)
 		
 		cc.mCTI      += cc.kCB
