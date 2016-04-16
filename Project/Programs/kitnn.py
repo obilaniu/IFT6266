@@ -788,7 +788,7 @@ class KITNNTrainer(Object):
 		"""Run classification on (B,3,H,W) tensor of images using current snapshot.
 		Returns a (B,2) tensor of probabilities."""
 		
-		return graph.predict({'input':imgs})["output"]
+		return self.model.predict({'input':imgs})["output"]
 
 
 
