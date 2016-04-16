@@ -291,6 +291,28 @@ def KSparsify(a,b,c):
 	cMedian = np.median(cAbs)
 	mask    = cAbs >= cMedian
 	return (a*mask, b*mask, c*mask)
+def KIResizeToSize(img, sz):
+	Wi = img.shape[1]
+	Hi = img.shape[0]
+	Wo = sz[1]
+	Ho = sz[0]
+	
+	ai = float(Wi)/float(Hi)
+	ao = float(Wo)/float(Ho)
+	
+	if ao>ai:
+		# The output is wider-aspect than the input. Resizing will leave black bands left and right.
+		img  = cv2.resize(img, (int(Ho*ai), Ho))
+		padL = int((Wo - img.shape[1])/2)
+		padR = Wo - img.shape[1] - padL
+		img  = cv2.copyMakeBorder(img, 0, 0, padL, padR, cv2.BORDER_CONSTANT)
+	else:
+		# The input is wider-aspect than the output. Resizing will leave black bands top and bottom.
+		img = cv2.resize(img, (Wo, int(Ho/ai)))
+		padT= int((Ho - img.shape[0])/2)
+		padB= Ho - img.shape[0] - padT
+		img = cv2.copyMakeBorder(img, padT, padB, 0, 0, cv2.BORDER_CONSTANT)
+	return img
 
 ###############################################################################
 # KITNN file management.
@@ -1063,7 +1085,34 @@ def verb_dumpargs(argv):
 	f  = KITNNFile(argv[2])
 	print list(f.getSession(argv[3]).d["meta/argv"][...])
 	f.close()
-
+def verb_test(argv):
+	"""Generate test set"""
+	f       = KITNNFile(argv[2])
+	sess    = f.getLastConsistentSession()
+	trainer = sess.getTrainer()
+	
+	print "id,label"
+	
+	# Loop over test set
+	testPath = argv[3]
+	for i in xrange(12500/trainer.kCB):
+		# Allocate memory
+		X = np.empty((trainer.kCB, 3, 192, 192), dtype="float32")
+		
+		# Resize images
+		for j in xrange(trainer.kCB):
+			n   = trainer.kCB*i + j + 1
+			img = cv2.imread(os.path.join(testPath, str(n)+".jpg"))
+			img = KIResizeToSize(img, (192,192))
+			X[j] = img.transpose(2,0,1).astype("float32")
+		
+		# Recognize
+		Y = np.argmax(trainer.classify(X*2.0/255.0 - 1.0), axis=1)
+		
+		# Print results
+		for j in xrange(trainer.kCB):
+			n = trainer.kCB*i + j + 1
+			print str(n)+","+str(Y[j])
 
 
 ###############################################################################
