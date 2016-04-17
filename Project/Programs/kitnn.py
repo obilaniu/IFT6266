@@ -569,7 +569,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f3_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire3/exp3/act",     input="fire3/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire3/exp/out",      inputs=["fire3/exp1/act", "fire3/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f4_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/comp/act",     inputs=["fire2/exp/out", "fire3/exp/out"], merge_mode="sum")
+		model.add_node  (KLCv.Convolution2D     (f4_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/comp/act",     input="fire3/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn4c/out",           input="fire4/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire4/comp/out",     input="bn4c/out")
 		model.add_node  (KLCv.Convolution2D     (f4_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/exp1/act",     input="fire4/comp/out")
@@ -585,7 +585,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f5_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire5/exp3/act",     input="fire5/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire5/exp/out",      inputs=["fire5/exp1/act", "fire5/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f6_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/comp/act",     inputs=["maxpool4/out", "fire5/exp/out"], merge_mode="sum")
+		model.add_node  (KLCv.Convolution2D     (f6_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/comp/act",     input="fire5/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn6c/out",           input="fire6/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire6/comp/out",     input="bn6c/out")
 		model.add_node  (KLCv.Convolution2D     (f6_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/exp1/act",     input="fire6/comp/out")
@@ -599,7 +599,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f7_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire7/exp3/act",     input="fire7/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire7/exp/out",      inputs=["fire7/exp1/act", "fire7/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCv.Convolution2D     (f8_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/comp/act",     inputs=["fire6/exp/out", "fire7/exp/out"], merge_mode="sum")
+		model.add_node  (KLCv.Convolution2D     (f8_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/comp/act",     input="fire7/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn8c/out",           input="fire8/comp/act")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire8/comp/out",     input="bn8c/out")
 		model.add_node  (KLCv.Convolution2D     (f8_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/exp1/act",     input="fire8/comp/out")
@@ -615,7 +615,7 @@ class KITNNTrainer(Object):
 		model.add_node  (KLCv.Convolution2D     (f9_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire9/exp3/act",     input="fire9/comp/out")
 		model.add_node  (KLCo.Activation        ("relu"),                                             "fire9/exp/out",      inputs=["fire9/exp1/act", "fire9/exp3/act"], concat_axis=1)
 		
-		model.add_node  (KLCo.Dropout           (0.5),                                                "dropout9/out",       inputs=["maxpool8/out", "fire9/exp/out"], merge_mode="sum")
+		model.add_node  (KLCo.Dropout           (0.5),                                                "dropout9/out",       input="fire9/exp/out")
 		
 		model.add_node  (KLCv.Convolution2D     (f10  , 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "conv10/act",         input="dropout9/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn10/out",           input="conv10/act")
