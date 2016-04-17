@@ -929,7 +929,7 @@ def KTCheckOverValidLoop(cc):
 		cc.log({"validErr":float(cc.mCVErrCnt)/cc.mCVI})
 		sys.stdout.write("\n")
 		sys.stdout.flush()
-		return cc.invoke(KTEpochLoopEnd, snap=False)
+		return cc.invoke(KTEpochLoopEnd, snap=True)
 @cps
 def KTEpochLoopEnd(cc):
 	# Save if best model so far.
