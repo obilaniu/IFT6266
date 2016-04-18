@@ -313,6 +313,8 @@ def KIResizeToSize(img, sz):
 		padB= Ho - img.shape[0] - padT
 		img = cv2.copyMakeBorder(img, padT, padB, 0, 0, cv2.BORDER_CONSTANT)
 	return img
+def KPPReLUInit(shape, name=None):
+	return T.shared(np.zeros((shape[0],1,1), dtype=TC.floatX), name=name, broadcastable=(False,True,True), strict=False)
 
 ###############################################################################
 # KITNN file management.
@@ -553,73 +555,73 @@ class KITNNTrainer(Object):
 		
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn1/out",            inputs=["finepool/out", "mediumpool/out", "conv1_coarse/act"], concat_axis=1)
 		
-		model.add_node  (KLCo.Activation        ("relu"),                                             "conv1/out",          input="bn1/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "conv1/out",          input="bn1/out")
 		
 		model.add_node  (KLCv.Convolution2D     (f2_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire2/comp/act",     input="conv1/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn2c/out",           input="fire2/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire2/comp/out",     input="bn2c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire2/comp/out",     input="bn2c/out")
 		model.add_node  (KLCv.Convolution2D     (f2_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire2/exp1/act",     input="fire2/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f2_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire2/exp3/act",     input="fire2/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire2/exp/out",      inputs=["fire2/exp1/act", "fire2/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire2/exp/out",      inputs=["fire2/exp1/act", "fire2/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.Convolution2D     (f3_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire3/comp/act",     input="fire2/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn3c/out",           input="fire3/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire3/comp/out",     input="bn3c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire3/comp/out",     input="bn3c/out")
 		model.add_node  (KLCv.Convolution2D     (f3_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire3/exp1/act",     input="fire3/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f3_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire3/exp3/act",     input="fire3/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire3/exp/out",      inputs=["fire3/exp1/act", "fire3/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire3/exp/out",      inputs=["fire3/exp1/act", "fire3/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.Convolution2D     (f4_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/comp/act",     input="fire3/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn4c/out",           input="fire4/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire4/comp/out",     input="bn4c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire4/comp/out",     input="bn4c/out")
 		model.add_node  (KLCv.Convolution2D     (f4_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/exp1/act",     input="fire4/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f4_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire4/exp3/act",     input="fire4/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire4/exp/out",      inputs=["fire4/exp1/act", "fire4/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire4/exp/out",      inputs=["fire4/exp1/act", "fire4/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.MaxPooling2D      ((3,3), (2,2), "same"),                               "maxpool4/out",       input="fire4/exp/out")
 		
 		model.add_node  (KLCv.Convolution2D     (f5_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire5/comp/act",     input="maxpool4/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn5c/out",           input="fire5/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire5/comp/out",     input="bn5c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire5/comp/out",     input="bn5c/out")
 		model.add_node  (KLCv.Convolution2D     (f5_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire5/exp1/act",     input="fire5/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f5_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire5/exp3/act",     input="fire5/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire5/exp/out",      inputs=["fire5/exp1/act", "fire5/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire5/exp/out",      inputs=["fire5/exp1/act", "fire5/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.Convolution2D     (f6_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/comp/act",     input="fire5/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn6c/out",           input="fire6/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire6/comp/out",     input="bn6c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire6/comp/out",     input="bn6c/out")
 		model.add_node  (KLCv.Convolution2D     (f6_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/exp1/act",     input="fire6/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f6_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire6/exp3/act",     input="fire6/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire6/exp/out",      inputs=["fire6/exp1/act", "fire6/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire6/exp/out",      inputs=["fire6/exp1/act", "fire6/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.Convolution2D     (f7_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire7/comp/act",     input="fire6/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn7c/out",           input="fire7/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire7/comp/out",     input="bn7c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire7/comp/out",     input="bn7c/out")
 		model.add_node  (KLCv.Convolution2D     (f7_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire7/exp1/act",     input="fire7/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f7_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire7/exp3/act",     input="fire7/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire7/exp/out",      inputs=["fire7/exp1/act", "fire7/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire7/exp/out",      inputs=["fire7/exp1/act", "fire7/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.Convolution2D     (f8_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/comp/act",     input="fire7/exp/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn8c/out",           input="fire8/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire8/comp/out",     input="bn8c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire8/comp/out",     input="bn8c/out")
 		model.add_node  (KLCv.Convolution2D     (f8_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/exp1/act",     input="fire8/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f8_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire8/exp3/act",     input="fire8/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire8/exp/out",      inputs=["fire8/exp1/act", "fire8/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire8/exp/out",      inputs=["fire8/exp1/act", "fire8/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCv.MaxPooling2D      ((3,3), (2,2), "same"),                               "maxpool8/out",       input="fire8/exp/out")
 		
 		model.add_node  (KLCv.Convolution2D     (f9_s1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire9/comp/act",     input="maxpool8/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn9c/out",           input="fire9/comp/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire9/comp/out",     input="bn9c/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire9/comp/out",     input="bn9c/out")
 		model.add_node  (KLCv.Convolution2D     (f9_e1, 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "fire9/exp1/act",     input="fire9/comp/out")
 		model.add_node  (KLCv.Convolution2D     (f9_e3, 3, 3, border_mode="same", init=convInit, W_regularizer=reg),     "fire9/exp3/act",     input="fire9/comp/out")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "fire9/exp/out",      inputs=["fire9/exp1/act", "fire9/exp3/act"], concat_axis=1)
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "fire9/exp/out",      inputs=["fire9/exp1/act", "fire9/exp3/act"], concat_axis=1)
 		
 		model.add_node  (KLCo.Dropout           (0.5),                                                "dropout9/out",       input="fire9/exp/out")
 		
 		model.add_node  (KLCv.Convolution2D     (f10  , 1, 1, border_mode="same", init=convInit, W_regularizer=reg),     "conv10/act",         input="dropout9/out")
 		model.add_node  (KLN. BatchNormalization(axis=1),                                             "bn10/out",           input="conv10/act")
-		model.add_node  (KLCo.Activation        ("relu"),                                             "conv10/out",         input="bn10/out")
+		model.add_node  (KLAa.PReLU             (init=KPPReLUInit),                                   "conv10/out",         input="bn10/out")
 		
 		model.add_node  (KLCv.AveragePooling2D  ((12,12), (1,1), "valid"),                            "avgpool10/out",      input="conv10/out")
 		
